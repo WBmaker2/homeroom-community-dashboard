@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>오늘 우리 반</title>
+  </head>
+  <body>
+    <script>
+      const basePath = "/homeroom-community-dashboard";
+      const currentPath = window.location.pathname;
+      const routePath = currentPath.startsWith(basePath)
+        ? currentPath.slice(basePath.length) || "/"
+        : currentPath || "/";
+
+      window.location.replace(
+        `${basePath}/#!${routePath}${window.location.search}${window.location.hash}`,
+      );
+    </script>
+  </body>
+</html>

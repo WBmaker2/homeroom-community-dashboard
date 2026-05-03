@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="오늘 우리 반">
+  <rect width="64" height="64" rx="12" fill="#12251f" />
+  <path d="M16 18h32v28H16z" fill="#fffdf8" />
+  <path d="M22 26h20M22 34h14" stroke="#12251f" stroke-width="4" stroke-linecap="round" />
+  <circle cx="45" cy="43" r="9" fill="#f2c14e" />
+</svg>
