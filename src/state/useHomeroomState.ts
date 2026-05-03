@@ -33,6 +33,12 @@ import {
   type HomeroomDataSnapshot,
   type SnapshotSummary,
 } from "../domain/persistence";
+import {
+  createParticipationCode,
+  getOrCreateTeacherId,
+  isTeacherId,
+  saveTeacherId,
+} from "../domain/inviteCodes";
 import { evaluateSeatingConflicts, recommendSeatingPlan } from "../domain/seating";
 import type {
   AgendaItem,
@@ -50,6 +56,7 @@ import type {
 } from "../domain/types";
 
 export type HomeroomState = {
+  teacherId: string;
   homeroomClasses: HomeroomClass[];
   activeClassId: string;
   homeroomClass: HomeroomClass;
@@ -97,6 +104,9 @@ export type HomeroomActions = {
 export function useHomeroomState() {
   const todayIso = "2026-05-03T09:00:00+09:00";
   const [initialLoad] = useState(loadInitialSnapshot);
+  const [teacherId, setTeacherId] = useState(
+    initialLoad.snapshot.teacherId ?? getOrCreateTeacherId(),
+  );
   const [homeroomClasses, setHomeroomClasses] = useState<HomeroomClass[]>(
     initialLoad.snapshot.homeroomClasses,
   );
@@ -159,6 +169,7 @@ export function useHomeroomState() {
   const fullSnapshot = useMemo<HomeroomDataSnapshot>(
     () =>
       normalizeSnapshot({
+        teacherId,
         homeroomClasses,
         activeClassId: activeClass.classId,
         praiseRecords,
@@ -172,6 +183,7 @@ export function useHomeroomState() {
         classManualAssignments,
       }),
     [
+      teacherId,
       homeroomClasses,
       activeClass.classId,
       praiseRecords,
@@ -256,6 +268,7 @@ export function useHomeroomState() {
   );
 
   const state: HomeroomState = {
+    teacherId,
     homeroomClasses,
     activeClassId: activeClass.classId,
     homeroomClass: activeClass,
@@ -530,9 +543,12 @@ export function useHomeroomState() {
   }
 
   function importSnapshot(snapshot: HomeroomDataSnapshot) {
-    const nextSnapshot = normalizeSnapshot(snapshot);
+    const importedTeacherId =
+      snapshot.teacherId && isTeacherId(snapshot.teacherId) ? snapshot.teacherId : teacherId;
+    const nextSnapshot = normalizeSnapshot({ ...snapshot, teacherId: importedTeacherId });
     const savedAt = new Date().toISOString();
 
+    setTeacherId(importedTeacherId);
     setHomeroomClasses(nextSnapshot.homeroomClasses);
     setActiveClassId(nextSnapshot.activeClassId);
     setPraiseRecords(nextSnapshot.praiseRecords);
@@ -546,6 +562,7 @@ export function useHomeroomState() {
     setClassManualAssignments(nextSnapshot.classManualAssignments);
 
     try {
+      saveTeacherId(window.localStorage, importedTeacherId);
       window.localStorage.setItem(
         STORAGE_KEY,
         serializeSnapshot(createSnapshotPayload({ snapshot: nextSnapshot, savedAt })),
@@ -599,15 +616,24 @@ function omitKey<T>(record: Record<string, T>, key: string): Record<string, T> {
   return rest;
 }
 
-function createSampleSnapshot(): HomeroomDataSnapshot {
+function createSampleSnapshot(teacherId: string): HomeroomDataSnapshot {
+  const sampleActivityCode = createParticipationCode({
+    prefix: "WARM",
+    teacherId,
+    existingCodes: [],
+  });
+
   return {
+    teacherId,
     homeroomClasses: [sampleClass],
     activeClassId: sampleClass.classId,
     praiseRecords: samplePraiseRecords,
     agendaItems: sampleAgendaItems,
     ruleCandidates: sampleRuleCandidates,
     classroomRules: sampleClassroomRules,
-    activities: sampleActivities,
+    activities: sampleActivities.map((activity, index) =>
+      index === 0 ? { ...activity, code: sampleActivityCode } : activity,
+    ),
     submissions: sampleSubmissions,
     classSeatMaps: {
       [sampleClass.classId]: sampleSeatMap,
@@ -626,7 +652,9 @@ function loadInitialSnapshot(): {
   message?: string;
   savedAt?: string;
 } {
-  const sampleSnapshot = createSampleSnapshot();
+  const storage = typeof window === "undefined" ? undefined : window.localStorage;
+  const teacherId = getOrCreateTeacherId(storage);
+  const sampleSnapshot = createSampleSnapshot(teacherId);
 
   if (typeof window === "undefined") {
     return { snapshot: sampleSnapshot };
@@ -648,8 +676,16 @@ function loadInitialSnapshot(): {
       };
     }
 
+    const importedTeacherId =
+      parsed.snapshot.teacherId && isTeacherId(parsed.snapshot.teacherId)
+        ? parsed.snapshot.teacherId
+        : teacherId;
+    const snapshot = normalizeSnapshot({ ...parsed.snapshot, teacherId: importedTeacherId });
+
+    saveTeacherId(window.localStorage, importedTeacherId);
+
     return {
-      snapshot: parsed.snapshot,
+      snapshot,
       savedAt: parsed.payload.savedAt,
     };
   } catch {

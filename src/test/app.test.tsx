@@ -17,6 +17,7 @@ import {
 
 function createBackupSnapshot(className = "복원 학급"): HomeroomDataSnapshot {
   return {
+    teacherId: "T-ABCDEFGH",
     homeroomClasses: [
       {
         classId: "class-imported",
@@ -57,6 +58,28 @@ function createBackupSnapshot(className = "복원 학급"): HomeroomDataSnapshot
   };
 }
 
+function createStudentParticipationSnapshot(code = "JOIN-TEST-2345"): HomeroomDataSnapshot {
+  const snapshot = createBackupSnapshot("학생 참여 학급");
+
+  return {
+    ...snapshot,
+    activities: [
+      {
+        activityId: "activity-test",
+        classId: "class-imported",
+        type: "ruleVote",
+        title: "테스트 투표",
+        code,
+        status: "open",
+        opensAt: "2026-05-03T08:00:00+09:00",
+        closesAt: "2026-05-03T18:00:00+09:00",
+        isAnonymous: true,
+        allowMultipleSubmissions: false,
+      },
+    ],
+  };
+}
+
 describe("homeroom app workflows", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -66,13 +89,24 @@ describe("homeroom app workflows", () => {
 
   it("keeps the student route separated from teacher controls", async () => {
     const user = userEvent.setup();
+    const activityCode = "JOIN-TEST-2345";
 
-    renderAt("/join/WARM-62");
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      serializeSnapshot(
+        createSnapshotPayload({
+          snapshot: createStudentParticipationSnapshot(activityCode),
+          savedAt: "2026-05-03T09:00:00.000Z",
+        }),
+      ),
+    );
+
+    renderAt(`/join/${activityCode}`);
 
     expect(screen.queryByRole("button", { name: "교사용" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "학급 설정" })).not.toBeInTheDocument();
 
-    await user.type(screen.getByLabelText("학급 번호"), "2");
+    await user.type(screen.getByLabelText("학급 번호"), "1");
     await user.click(screen.getByRole("button", { name: "제출" }));
 
     expect(screen.getByRole("status").textContent).toContain("제출되었습니다.");

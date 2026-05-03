@@ -1,6 +1,10 @@
 import { Megaphone, Plus } from "lucide-react";
 import { useState } from "react";
 import { createRuleCandidateFromAgenda } from "../../../domain/agendaRules";
+import {
+  createParticipationCode,
+  getExistingActivityCodes,
+} from "../../../domain/inviteCodes";
 import type { AgendaItem, AgendaStatus, ParticipationActivity } from "../../../domain/types";
 import type { HomeroomActions, HomeroomState } from "../../../state/useHomeroomState";
 
@@ -68,7 +72,11 @@ export function AgendaView({ state, actions, getStudentName }: AgendaViewProps) 
       classId: state.homeroomClass.classId,
       type: "agendaSubmission",
       title: "학급 회의 안건 제출",
-      code: makeCode("AGENDA"),
+      code: createParticipationCode({
+        prefix: "AGENDA",
+        teacherId: state.teacherId,
+        existingCodes: getExistingActivityCodes(state.activities),
+      }),
       status: "open",
       opensAt: state.todayIso,
       closesAt: "2026-05-10T18:00:00+09:00",
@@ -199,8 +207,4 @@ export function AgendaView({ state, actions, getStudentName }: AgendaViewProps) 
       </section>
     </div>
   );
-}
-
-function makeCode(prefix: string): string {
-  return `${prefix}-${String(Date.now()).slice(-4)}`;
 }

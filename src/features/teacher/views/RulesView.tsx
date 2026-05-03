@@ -1,6 +1,10 @@
 import { CheckCircle2, Megaphone, Plus } from "lucide-react";
 import { useState } from "react";
 import { confirmRuleCandidate } from "../../../domain/agendaRules";
+import {
+  createParticipationCode,
+  getExistingActivityCodes,
+} from "../../../domain/inviteCodes";
 import type {
   ParticipationActivity,
   RuleCandidate,
@@ -70,7 +74,11 @@ export function RulesView({ state, actions }: RulesViewProps) {
       type: "ruleVote",
       title: `${candidate.title} 투표`,
       targetId: candidate.ruleCandidateId,
-      code: `VOTE-${String(Date.now()).slice(-4)}`,
+      code: createParticipationCode({
+        prefix: "VOTE",
+        teacherId: state.teacherId,
+        existingCodes: getExistingActivityCodes(state.activities),
+      }),
       status: "open",
       opensAt: state.todayIso,
       closesAt: "2026-05-03T18:00:00+09:00",

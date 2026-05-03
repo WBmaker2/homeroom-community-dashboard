@@ -26,6 +26,13 @@ import {
   findStudentByNumber,
   normalizeStudentNumber,
 } from "../domain/participation";
+import {
+  TEACHER_ID_STORAGE_KEY,
+  createParticipationCode,
+  createTeacherId,
+  getOrCreateTeacherId,
+  getTeacherCodeSegment,
+} from "../domain/inviteCodes";
 import { buildWeeklyPraiseDraft } from "../domain/praise";
 import { recommendSeatingPlan } from "../domain/seating";
 
@@ -57,6 +64,54 @@ describe("student participation", () => {
     });
 
     expect(result).toEqual({ ok: false, reason: "activityClosed" });
+  });
+});
+
+describe("teacher scoped invite codes", () => {
+  it("creates different participation codes for different teachers", () => {
+    const firstCode = createParticipationCode({
+      prefix: "VOTE",
+      teacherId: "T-K7Q2M9P4",
+      randomSegment: () => "ABCD",
+    });
+    const secondCode = createParticipationCode({
+      prefix: "VOTE",
+      teacherId: "T-R8TXF3PA",
+      randomSegment: () => "ABCD",
+    });
+
+    expect(firstCode).toBe("VOTE-K7Q2-ABCD");
+    expect(secondCode).toBe("VOTE-R8TX-ABCD");
+  });
+
+  it("rerolls the random part when an activity code already exists", () => {
+    const segments = ["ABCD", "EFGH"];
+    const code = createParticipationCode({
+      prefix: "AGENDA",
+      teacherId: "T-K7Q2M9P4",
+      existingCodes: ["AGENDA-K7Q2-ABCD"],
+      randomSegment: () => segments.shift() ?? "ZZZZ",
+    });
+
+    expect(code).toBe("AGENDA-K7Q2-EFGH");
+  });
+
+  it("creates a stable teacher segment from a teacher id", () => {
+    expect(createTeacherId(() => "K7Q2M9P4")).toBe("T-K7Q2M9P4");
+    expect(getTeacherCodeSegment("T-K7Q2M9P4")).toBe("K7Q2");
+  });
+
+  it("persists the random teacher id for the current browser storage", () => {
+    const storage = createMemoryStorage();
+    const teacherId = getOrCreateTeacherId(storage, () => "K7Q2M9P4");
+
+    expect(teacherId).toBe("T-K7Q2M9P4");
+    expect(storage.getItem(TEACHER_ID_STORAGE_KEY)).toBe("T-K7Q2M9P4");
+    expect(getOrCreateTeacherId(storage, () => "R8TXF3PA")).toBe("T-K7Q2M9P4");
+  });
+
+  it("does not keep the old shared sample participation code", () => {
+    expect(sampleActivities[0]?.code).not.toBe("WARM-62");
   });
 });
 
@@ -174,3 +229,28 @@ describe("class settings helpers", () => {
     expect(nextAgenda[0]?.submittedByStudentId).toBeUndefined();
   });
 });
+
+function createMemoryStorage(): Storage {
+  const store = new Map<string, string>();
+
+  return {
+    get length() {
+      return store.size;
+    },
+    clear() {
+      store.clear();
+    },
+    getItem(key: string) {
+      return store.get(key) ?? null;
+    },
+    key(index: number) {
+      return Array.from(store.keys())[index] ?? null;
+    },
+    removeItem(key: string) {
+      store.delete(key);
+    },
+    setItem(key: string, value: string) {
+      store.set(key, value);
+    },
+  };
+}

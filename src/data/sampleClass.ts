@@ -121,7 +121,7 @@ export const sampleActivities: ParticipationActivity[] = [
     type: "ruleVote",
     title: "모둠 활동 시작 전 역할 확인하기 투표",
     targetId: "r-candidate-01",
-    code: "WARM-62",
+    code: "WARM-DEMO-0000",
     status: "open",
     opensAt: "2026-05-03T08:00:00+09:00",
     closesAt: "2026-05-03T18:00:00+09:00",

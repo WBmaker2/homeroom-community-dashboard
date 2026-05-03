@@ -16,6 +16,7 @@ export const STORAGE_KEY = `${APP_ID}:v1`;
 export const SCHEMA_VERSION = 1;
 
 export type HomeroomDataSnapshot = {
+  teacherId?: string;
   homeroomClasses: HomeroomClass[];
   activeClassId: string;
   praiseRecords: PraiseRecord[];
@@ -234,6 +235,7 @@ export function normalizeSnapshot(snapshot: HomeroomDataSnapshot): HomeroomDataS
 
   return {
     ...snapshot,
+    teacherId: snapshot.teacherId,
     homeroomClasses,
     activeClassId,
     classSeatMaps,
