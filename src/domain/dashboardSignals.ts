@@ -1,4 +1,5 @@
 import { recommendSeatingPlan } from "./seating";
+import { startOfHomeroomDay } from "./timePolicy";
 import type {
   AgendaItem,
   ClassroomRule,
@@ -23,7 +24,7 @@ export function computeDashboardSignals(params: {
   todayIso: string;
   praiseGapDays?: number;
 }): DashboardSignals {
-  const today = startOfDay(params.todayIso);
+  const today = startOfHomeroomDay(params.todayIso);
   const praiseGapDays = params.praiseGapDays ?? 7;
   const praiseGapCutoff = today.getTime() - praiseGapDays * dayMs;
   const soonCutoff = today.getTime() + dayMs;
@@ -73,12 +74,4 @@ function getLatestPraiseTime(records: PraiseRecord[], studentId: string): number
   }
 
   return Math.max(...times);
-}
-
-function startOfDay(isoDate: string): Date {
-  const date = new Date(isoDate);
-
-  date.setHours(0, 0, 0, 0);
-
-  return date;
 }

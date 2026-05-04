@@ -1,6 +1,7 @@
 import { Check, PencilLine, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { buildWeeklyPraiseDraft, getLatestApprovedPraiseDate } from "../../../domain/praise";
+import { getCurrentHomeroomIso } from "../../../domain/timePolicy";
 import type { PraiseRecord } from "../../../domain/types";
 import type { HomeroomActions, HomeroomState } from "../../../state/useHomeroomState";
 
@@ -56,11 +57,13 @@ export function PraiseView({ state, actions, signals, getStudentName }: PraiseVi
       return;
     }
 
+    const nowIso = getCurrentHomeroomIso();
+
     const nextRecord: PraiseRecord = {
       praiseId: `praise-${Date.now()}`,
       classId: state.homeroomClass.classId,
       studentId,
-      date: state.todayIso,
+      date: nowIso,
       tags: [tag],
       memo: cleanMemo,
       visibility: "teacherOnly",

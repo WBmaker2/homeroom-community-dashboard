@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { createAbsoluteAppUrl } from "../../domain/appRoutes";
+import { formatKoreanDateLabel } from "../../domain/timePolicy";
 import type { computeDashboardSignals } from "../../domain/dashboardSignals";
 import type { recommendSeatingPlan } from "../../domain/seating";
 import type { HomeroomActions, HomeroomState } from "../../state/useHomeroomState";
@@ -98,7 +99,7 @@ export function TeacherShell({
       <section className="workspace">
         <header className="workspace-header">
           <div>
-            <p className="date-label">2026년 5월 3일</p>
+            <p className="date-label">{formatKoreanDateLabel(state.todayIso)}</p>
             <h1>담임 하루 운영 대시보드</h1>
           </div>
           <div className="header-actions">

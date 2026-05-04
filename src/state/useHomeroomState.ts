@@ -40,6 +40,11 @@ import {
   saveTeacherId,
 } from "../domain/inviteCodes";
 import { evaluateSeatingConflicts, recommendSeatingPlan } from "../domain/seating";
+import {
+  createDefaultRuleCheckDate,
+  createDefaultVoteClosesAt,
+  getCurrentHomeroomIso,
+} from "../domain/timePolicy";
 import type {
   AgendaItem,
   ClassroomRule,
@@ -102,8 +107,8 @@ export type HomeroomActions = {
 };
 
 export function useHomeroomState() {
-  const todayIso = "2026-05-03T09:00:00+09:00";
-  const [initialLoad] = useState(loadInitialSnapshot);
+  const [todayIso, setTodayIso] = useState(() => getCurrentHomeroomIso());
+  const [initialLoad] = useState(() => loadInitialSnapshot(todayIso));
   const [teacherId, setTeacherId] = useState(
     initialLoad.snapshot.teacherId ?? getOrCreateTeacherId(),
   );
@@ -135,6 +140,14 @@ export function useHomeroomState() {
     message: initialLoad.message ?? "",
     lastSavedAt: initialLoad.savedAt ?? null,
   });
+  useEffect(() => {
+    const tick = window.setInterval(() => {
+      setTodayIso(getCurrentHomeroomIso());
+    }, 60_000);
+
+    return () => window.clearInterval(tick);
+  }, []);
+
   const activeClass = useMemo(
     () => homeroomClasses.find((homeroomClass) => homeroomClass.classId === activeClassId) ?? homeroomClasses[0] ?? sampleClass,
     [activeClassId, homeroomClasses],
@@ -616,12 +629,23 @@ function omitKey<T>(record: Record<string, T>, key: string): Record<string, T> {
   return rest;
 }
 
-function createSampleSnapshot(teacherId: string): HomeroomDataSnapshot {
+function createSampleSnapshot(teacherId: string, todayIso: string): HomeroomDataSnapshot {
   const sampleActivityCode = createParticipationCode({
     prefix: "WARM",
     teacherId,
     existingCodes: [],
   });
+  const voteClosesAt = createDefaultVoteClosesAt(todayIso);
+  const defaultCheckDate = createDefaultRuleCheckDate(todayIso);
+  const adjustedActivities = sampleActivities.map((activity, index) =>
+    index === 0 ? { ...activity, code: sampleActivityCode, opensAt: todayIso, closesAt: voteClosesAt } : activity,
+  );
+  const adjustedRuleCandidates = sampleRuleCandidates.map((candidate, index) =>
+    index === 0 ? { ...candidate, voteEndsAt: voteClosesAt } : candidate,
+  );
+  const adjustedClassroomRules = sampleClassroomRules.map((rule, index) =>
+    index === 0 ? { ...rule, checkDate: defaultCheckDate } : rule,
+  );
 
   return {
     teacherId,
@@ -629,11 +653,9 @@ function createSampleSnapshot(teacherId: string): HomeroomDataSnapshot {
     activeClassId: sampleClass.classId,
     praiseRecords: samplePraiseRecords,
     agendaItems: sampleAgendaItems,
-    ruleCandidates: sampleRuleCandidates,
-    classroomRules: sampleClassroomRules,
-    activities: sampleActivities.map((activity, index) =>
-      index === 0 ? { ...activity, code: sampleActivityCode } : activity,
-    ),
+    ruleCandidates: adjustedRuleCandidates,
+    classroomRules: adjustedClassroomRules,
+    activities: adjustedActivities,
     submissions: sampleSubmissions,
     classSeatMaps: {
       [sampleClass.classId]: sampleSeatMap,
@@ -647,14 +669,14 @@ function createSampleSnapshot(teacherId: string): HomeroomDataSnapshot {
   };
 }
 
-function loadInitialSnapshot(): {
+function loadInitialSnapshot(todayIso: string): {
   snapshot: HomeroomDataSnapshot;
   message?: string;
   savedAt?: string;
 } {
   const storage = typeof window === "undefined" ? undefined : window.localStorage;
   const teacherId = getOrCreateTeacherId(storage);
-  const sampleSnapshot = createSampleSnapshot(teacherId);
+  const sampleSnapshot = createSampleSnapshot(teacherId, todayIso);
 
   if (typeof window === "undefined") {
     return { snapshot: sampleSnapshot };

@@ -1,6 +1,7 @@
 import { CheckCircle2, Send } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { canAcceptSubmission, findStudentByNumber } from "../../domain/participation";
+import { getCurrentHomeroomIso } from "../../domain/timePolicy";
 import type {
   AgendaItem,
   ParticipationActivity,
@@ -48,12 +49,14 @@ export function StudentParticipation({
       return;
     }
 
+    const nowIso = getCurrentHomeroomIso();
+
     const gate = canAcceptSubmission({
       activity,
       students: state.homeroomClass.students,
       studentNumberInput: studentNumber,
       previousSubmissions: state.submissions,
-      nowIso: state.todayIso,
+      nowIso,
     });
 
     if (!gate.ok) {
@@ -66,7 +69,7 @@ export function StudentParticipation({
       return;
     }
 
-    const submittedAt = state.todayIso;
+    const submittedAt = nowIso;
     const nextSubmission: ParticipationSubmission = {
       submissionId: `submission-${Date.now()}`,
       classId: activity.classId,
@@ -83,11 +86,11 @@ export function StudentParticipation({
     }
 
     if (activity.type === "agendaSubmission") {
-      submitAgenda(activity, gate.student.studentId, content.trim());
+      submitAgenda(activity, gate.student.studentId, content.trim(), nowIso);
     }
 
     if (activity.type === "praiseReport") {
-      submitPraiseReport(activity, gate.student.studentId, targetStudentId, content.trim());
+      submitPraiseReport(activity, gate.student.studentId, targetStudentId, content.trim(), nowIso);
     }
 
     actions.setSubmissions((submissions) => [nextSubmission, ...submissions]);
@@ -122,6 +125,7 @@ export function StudentParticipation({
     activityToSubmit: ParticipationActivity,
     submittedByStudentId: string,
     cleanContent: string,
+    nowIso: string,
   ) {
     const nextAgenda: AgendaItem = {
       agendaId: `agenda-${Date.now()}`,
@@ -130,7 +134,7 @@ export function StudentParticipation({
       title: cleanContent.slice(0, 24),
       originalText: cleanContent,
       status: "PENDING_REVIEW",
-      submittedAt: state.todayIso,
+      submittedAt: nowIso,
       isPublic: false,
     };
 
@@ -142,13 +146,14 @@ export function StudentParticipation({
     submittedByStudentId: string,
     studentId: string,
     cleanContent: string,
+    nowIso: string,
   ) {
     const nextPraise: PraiseRecord = {
       praiseId: `praise-${Date.now()}`,
       classId: activityToSubmit.classId,
       studentId,
       submittedByStudentId,
-      date: state.todayIso,
+      date: nowIso,
       tags: ["학생 제보"],
       memo: cleanContent,
       visibility: "publicAfterReview",

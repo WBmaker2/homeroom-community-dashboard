@@ -35,6 +35,15 @@ import {
 } from "../domain/inviteCodes";
 import { buildWeeklyPraiseDraft } from "../domain/praise";
 import { recommendSeatingPlan } from "../domain/seating";
+import { resolveRuleCheckDateForConfirmation } from "../features/teacher/views/RulesView";
+import {
+  createDefaultAgendaClosesAt,
+  createDefaultRuleCheckDate,
+  createDefaultVoteClosesAt,
+  formatKoreanDateLabel,
+  getCurrentHomeroomIso,
+  startOfHomeroomDay,
+} from "../domain/timePolicy";
 
 describe("student participation", () => {
   it("normalizes class number input before matching the roster", () => {
@@ -160,6 +169,63 @@ describe("dashboard signals", () => {
     expect(signals.voteEndingSoonCount).toBe(1);
     expect(signals.praiseGapStudents.length).toBeGreaterThan(0);
     expect(signals.rulesDueSoon).toHaveLength(1);
+  });
+});
+
+describe("time policy", () => {
+  it("formats ISO timestamp to Korean date label", () => {
+    expect(formatKoreanDateLabel("2026-05-03T00:00:00+09:00")).toBe("2026년 5월 3일");
+  });
+
+  it("returns Seoul day start regardless of input offset", () => {
+    expect(startOfHomeroomDay("2026-05-03T15:00:00Z").toISOString()).toBe("2026-05-03T15:00:00.000Z");
+  });
+
+  it("gets now in Seoul as ISO-like string", () => {
+    expect(getCurrentHomeroomIso(new Date("2026-05-03T00:00:00.000Z"))).toBe("2026-05-03T09:00:00+09:00");
+  });
+
+  it("creates agenda closes at 7 days after base date at 18:00", () => {
+    expect(createDefaultAgendaClosesAt("2026-05-03T10:00:00+09:00")).toBe("2026-05-10T18:00:00+09:00");
+  });
+
+  it("creates vote closes at same-day 18:00 when base time is before cutoff", () => {
+    expect(createDefaultVoteClosesAt("2026-05-03T10:00:00+09:00")).toBe("2026-05-03T18:00:00+09:00");
+  });
+
+  it("creates vote closes at next day 18:00 when base time is after 18:00", () => {
+    expect(createDefaultVoteClosesAt("2026-05-03T18:01:00+09:00")).toBe("2026-05-04T18:00:00+09:00");
+  });
+
+  it("creates default classroom rule check date to 7 days later at 09:00", () => {
+    expect(createDefaultRuleCheckDate("2026-05-03T10:00:00+09:00")).toBe("2026-05-10T09:00:00+09:00");
+  });
+
+  it("handles month and year rollover for default windows", () => {
+    expect(createDefaultVoteClosesAt("2026-01-31T18:01:00+09:00")).toBe("2026-02-01T18:00:00+09:00");
+    expect(createDefaultRuleCheckDate("2026-12-28T10:00:00+09:00")).toBe("2027-01-04T09:00:00+09:00");
+  });
+});
+
+describe("rule confirmation date resolution", () => {
+  it("uses today+7 09:00 when check date is not manually edited", () => {
+    expect(
+      resolveRuleCheckDateForConfirmation({
+        nowIso: "2026-05-04T10:00:00+09:00",
+        hasManualCheckDate: false,
+        checkDate: "1989-01-01T09:00:00+09:00",
+      }),
+    ).toBe("2026-05-11T09:00:00+09:00");
+  });
+
+  it("keeps manual check date when user edited it", () => {
+    expect(
+      resolveRuleCheckDateForConfirmation({
+        nowIso: "2026-05-04T10:00:00+09:00",
+        hasManualCheckDate: true,
+        checkDate: "1989-01-01T09:00:00+09:00",
+      }),
+    ).toBe("1989-01-01T09:00:00+09:00");
   });
 });
 

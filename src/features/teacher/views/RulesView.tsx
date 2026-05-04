@@ -1,6 +1,11 @@
 import { CheckCircle2, Megaphone, Plus } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { confirmRuleCandidate } from "../../../domain/agendaRules";
+import {
+  createDefaultRuleCheckDate,
+  createDefaultVoteClosesAt,
+  getCurrentHomeroomIso,
+} from "../../../domain/timePolicy";
 import {
   createParticipationCode,
   getExistingActivityCodes,
@@ -27,10 +32,27 @@ const ruleStatusLabels: Record<RuleCandidateStatus, string> = {
   ARCHIVED: "보관",
 };
 
+export function resolveRuleCheckDateForConfirmation(params: {
+  nowIso: string;
+  hasManualCheckDate: boolean;
+  checkDate: string;
+}): string {
+  return params.hasManualCheckDate ? params.checkDate : createDefaultRuleCheckDate(params.nowIso);
+}
+
 export function RulesView({ state, actions }: RulesViewProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [checkDate, setCheckDate] = useState("2026-05-10T09:00:00+09:00");
+  const [checkDate, setCheckDate] = useState(() => createDefaultRuleCheckDate(state.todayIso));
+  const [hasManualCheckDate, setHasManualCheckDate] = useState(false);
+
+  useEffect(() => {
+    if (hasManualCheckDate) {
+      return;
+    }
+
+    setCheckDate(createDefaultRuleCheckDate(state.todayIso));
+  }, [hasManualCheckDate, state.todayIso]);
 
   function addCandidate() {
     if (title.trim().length === 0 || description.trim().length === 0) {
@@ -63,9 +85,11 @@ export function RulesView({ state, actions }: RulesViewProps) {
   }
 
   function openVote(candidate: RuleCandidate) {
+    const nowIso = getCurrentHomeroomIso();
+
     updateCandidate(candidate.ruleCandidateId, {
       status: "VOTING",
-      voteEndsAt: "2026-05-03T18:00:00+09:00",
+      voteEndsAt: createDefaultVoteClosesAt(nowIso),
     });
 
     const nextActivity: ParticipationActivity = {
@@ -80,8 +104,8 @@ export function RulesView({ state, actions }: RulesViewProps) {
         existingCodes: getExistingActivityCodes(state.activities),
       }),
       status: "open",
-      opensAt: state.todayIso,
-      closesAt: "2026-05-03T18:00:00+09:00",
+      opensAt: nowIso,
+      closesAt: createDefaultVoteClosesAt(nowIso),
       isAnonymous: true,
       allowMultipleSubmissions: false,
     };
@@ -90,10 +114,17 @@ export function RulesView({ state, actions }: RulesViewProps) {
   }
 
   function confirmCandidate(candidate: RuleCandidate) {
+    const nowIso = getCurrentHomeroomIso();
+    const confirmCheckDate = resolveRuleCheckDateForConfirmation({
+      nowIso,
+      hasManualCheckDate,
+      checkDate,
+    });
+
     const nextRule = confirmRuleCandidate({
       candidate,
       classId: state.homeroomClass.classId,
-      checkDate,
+      checkDate: confirmCheckDate,
       createdAtMs: Date.now(),
     });
 
@@ -170,7 +201,13 @@ export function RulesView({ state, actions }: RulesViewProps) {
 
             <label>
               점검일
-              <input value={checkDate} onChange={(event) => setCheckDate(event.target.value)} />
+              <input
+                value={checkDate}
+                onChange={(event) => {
+                  setHasManualCheckDate(true);
+                  setCheckDate(event.target.value);
+                }}
+              />
             </label>
 
             <div className="button-row">

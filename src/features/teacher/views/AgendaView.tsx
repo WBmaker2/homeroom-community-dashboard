@@ -2,6 +2,10 @@ import { Megaphone, Plus } from "lucide-react";
 import { useState } from "react";
 import { createRuleCandidateFromAgenda } from "../../../domain/agendaRules";
 import {
+  createDefaultAgendaClosesAt,
+  getCurrentHomeroomIso,
+} from "../../../domain/timePolicy";
+import {
   createParticipationCode,
   getExistingActivityCodes,
 } from "../../../domain/inviteCodes";
@@ -35,13 +39,15 @@ export function AgendaView({ state, actions, getStudentName }: AgendaViewProps) 
       return;
     }
 
+    const nowIso = getCurrentHomeroomIso();
+
     const nextAgenda: AgendaItem = {
       agendaId: `agenda-${Date.now()}`,
       classId: state.homeroomClass.classId,
       title: cleanText.slice(0, 24),
       originalText: cleanText,
       status: "PENDING_REVIEW",
-      submittedAt: state.todayIso,
+      submittedAt: nowIso,
       isPublic: false,
     };
 
@@ -67,6 +73,8 @@ export function AgendaView({ state, actions, getStudentName }: AgendaViewProps) 
   }
 
   function openAgendaActivity() {
+    const nowIso = getCurrentHomeroomIso();
+
     const nextActivity: ParticipationActivity = {
       activityId: `activity-agenda-${Date.now()}`,
       classId: state.homeroomClass.classId,
@@ -78,8 +86,8 @@ export function AgendaView({ state, actions, getStudentName }: AgendaViewProps) 
         existingCodes: getExistingActivityCodes(state.activities),
       }),
       status: "open",
-      opensAt: state.todayIso,
-      closesAt: "2026-05-10T18:00:00+09:00",
+      opensAt: nowIso,
+      closesAt: createDefaultAgendaClosesAt(nowIso),
       isAnonymous: false,
       allowMultipleSubmissions: true,
     };

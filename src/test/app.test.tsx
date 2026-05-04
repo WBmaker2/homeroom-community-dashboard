@@ -1,11 +1,12 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import {
   STORAGE_KEY,
   createSnapshotPayload,
+  parseStoredSnapshot,
   serializeBackup,
   serializeSnapshot,
   type HomeroomDataSnapshot,
@@ -14,6 +15,7 @@ import {
   TEACHER_PIN_STORAGE_KEY,
   TEACHER_UNLOCK_STORAGE_KEY,
 } from "../features/teacher/TeacherAccessGate";
+import * as timePolicy from "../domain/timePolicy";
 
 function createBackupSnapshot(className = "복원 학급"): HomeroomDataSnapshot {
   return {
@@ -60,6 +62,8 @@ function createBackupSnapshot(className = "복원 학급"): HomeroomDataSnapshot
 
 function createStudentParticipationSnapshot(code = "JOIN-TEST-2345"): HomeroomDataSnapshot {
   const snapshot = createBackupSnapshot("학생 참여 학급");
+  const opensAt = "2020-01-01T00:00:00+09:00";
+  const closesAt = "2099-12-31T18:00:00+09:00";
 
   return {
     ...snapshot,
@@ -71,8 +75,8 @@ function createStudentParticipationSnapshot(code = "JOIN-TEST-2345"): HomeroomDa
         title: "테스트 투표",
         code,
         status: "open",
-        opensAt: "2026-05-03T08:00:00+09:00",
-        closesAt: "2026-05-03T18:00:00+09:00",
+        opensAt,
+        closesAt,
         isAnonymous: true,
         allowMultipleSubmissions: false,
       },
@@ -85,6 +89,10 @@ describe("homeroom app workflows", () => {
     window.localStorage.clear();
     window.sessionStorage.clear();
     window.history.pushState(null, "", "/");
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("keeps the student route separated from teacher controls", async () => {
@@ -233,6 +241,129 @@ describe("homeroom app workflows", () => {
     expect(window.localStorage.getItem(TEACHER_PIN_STORAGE_KEY)).toBe("1234");
     expect(window.sessionStorage.getItem(TEACHER_UNLOCK_STORAGE_KEY)).toBe("true");
   });
+
+  it("keeps existing activity/candidate/rule dates when loading from existing storage", async () => {
+    const fixedNow = "2026-05-04T10:00:00+09:00";
+    const legacyActivityClosesAt = "2025-05-01T18:00:00+09:00";
+    const legacyVoteEndsAt = "2025-05-01T18:00:00+09:00";
+    const legacyRuleCheckDate = "2025-05-05T09:00:00+09:00";
+    const savedSnapshot = createDateSeededSnapshot({
+      activityClosesAt: legacyActivityClosesAt,
+      ruleCandidateVoteEndsAt: legacyVoteEndsAt,
+      ruleCheckDate: legacyRuleCheckDate,
+    });
+
+    vi.spyOn(timePolicy, "getCurrentHomeroomIso").mockReturnValue(fixedNow);
+
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      serializeSnapshot(
+        createSnapshotPayload({
+          snapshot: savedSnapshot,
+          savedAt: "2026-05-03T09:00:00.000Z",
+        }),
+      ),
+    );
+
+    unlockTeacherSession();
+    renderAt("/teacher");
+
+    await waitFor(() => {
+      const persisted = getPersistedSnapshot();
+
+      expect(persisted.activities[0]?.closesAt).toBe(legacyActivityClosesAt);
+      expect(persisted.ruleCandidates[0]?.voteEndsAt).toBe(legacyVoteEndsAt);
+      expect(persisted.classroomRules[0]?.checkDate).toBe(legacyRuleCheckDate);
+    });
+  });
+
+  it("adjusts fresh sample dates to policy windows on first run", async () => {
+    const fixedNow = "2026-05-04T10:00:00+09:00";
+    vi.spyOn(timePolicy, "getCurrentHomeroomIso").mockReturnValue(fixedNow);
+
+    const expectedVoteClosesAt = timePolicy.createDefaultVoteClosesAt(fixedNow);
+    const expectedRuleCheckDate = timePolicy.createDefaultRuleCheckDate(fixedNow);
+
+    unlockTeacherSession();
+    renderAt("/teacher");
+
+    await waitFor(() => {
+      const persisted = getPersistedSnapshot();
+
+      expect(
+        persisted.activities.find((activity) => activity.type === "ruleVote")?.closesAt,
+      ).toBe(expectedVoteClosesAt);
+      expect(
+        persisted.ruleCandidates.find((candidate) => candidate.voteEndsAt)?.voteEndsAt,
+      ).toBe(expectedVoteClosesAt);
+      expect(
+        persisted.classroomRules.find((rule) => rule.checkDate)?.checkDate,
+      ).toBe(expectedRuleCheckDate);
+    });
+  });
+
+  it("creates policy-aligned deadlines when teacher opens agenda, vote, and confirms rules", async () => {
+    const user = userEvent.setup();
+    const screenOpenedAt = "2026-05-04T10:00:00+09:00";
+    const confirmedAt = "2026-05-05T10:00:00+09:00";
+    const expectedAgendaClosesAt = timePolicy.createDefaultAgendaClosesAt(screenOpenedAt);
+    const expectedVoteClosesAt = timePolicy.createDefaultVoteClosesAt(screenOpenedAt);
+    const initialRuleCheckDate = timePolicy.createDefaultRuleCheckDate(screenOpenedAt);
+    const expectedConfirmedRuleCheckDate = timePolicy.createDefaultRuleCheckDate(confirmedAt);
+
+    const nowSpy = vi.spyOn(timePolicy, "getCurrentHomeroomIso").mockReturnValue(screenOpenedAt);
+
+    unlockTeacherSession();
+    renderAt("/teacher");
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "회의 안건" })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "회의 안건" }));
+    await user.click(screen.getByRole("button", { name: "안건 제출 열기" }));
+
+    await waitFor(() => {
+      const persisted = getPersistedSnapshot();
+      const agendaSubmission = persisted.activities.find(
+        (activity) => activity.type === "agendaSubmission",
+      );
+
+      expect(agendaSubmission?.closesAt).toBe(expectedAgendaClosesAt);
+    });
+
+    const beforeVoteCount = getPersistedSnapshot().activities.filter(
+      (activity) => activity.type === "ruleVote",
+    ).length;
+    await user.click(screen.getByRole("button", { name: "규칙 합의" }));
+
+    const ruleDateInput = screen.getByLabelText("점검일");
+    expect(ruleDateInput).toHaveValue(initialRuleCheckDate);
+
+    await user.click(screen.getByRole("button", { name: "투표 열기" }));
+
+    await waitFor(() => {
+      const persisted = getPersistedSnapshot();
+
+      expect(
+        persisted.activities.filter((activity) => activity.type === "ruleVote").length,
+      ).toBe(beforeVoteCount + 1);
+      expect(persisted.activities.find((activity) => activity.type === "ruleVote")?.closesAt).toBe(
+        expectedVoteClosesAt,
+      );
+    });
+
+    await user.click(screen.getByRole("button", { name: "투표 종료" }));
+    nowSpy.mockReturnValue(confirmedAt);
+    await user.click(screen.getByRole("button", { name: "확정" }));
+
+    await waitFor(() => {
+      const persisted = getPersistedSnapshot();
+
+      expect(persisted.classroomRules[0]?.checkDate).toBe(expectedConfirmedRuleCheckDate);
+      expect(persisted.classroomRules[0]?.title).toBe("모둠 활동 시작 전 역할 확인하기");
+    });
+  });
 });
 
 function renderAt(path: string) {
@@ -244,4 +375,72 @@ function renderAt(path: string) {
 function unlockTeacherSession() {
   window.localStorage.setItem(TEACHER_PIN_STORAGE_KEY, "1234");
   window.sessionStorage.setItem(TEACHER_UNLOCK_STORAGE_KEY, "true");
+}
+
+function createDateSeededSnapshot(params: {
+  activityClosesAt: string;
+  ruleCandidateVoteEndsAt: string;
+  ruleCheckDate: string;
+}): HomeroomDataSnapshot {
+  const seed = createBackupSnapshot("저장된 학급");
+  const classId = seed.homeroomClasses[0]?.classId ?? "class-imported";
+
+  return {
+    ...seed,
+    activities: [
+      {
+        activityId: "activity-vote-saved",
+        classId,
+        type: "ruleVote",
+        title: "기존 저장 투표",
+        targetId: "saved-candidate",
+        code: "SAVE-VOTE-0000",
+        status: "open",
+        opensAt: "2026-01-01T09:00:00+09:00",
+        closesAt: params.activityClosesAt,
+        isAnonymous: true,
+        allowMultipleSubmissions: false,
+      },
+    ],
+    ruleCandidates: [
+      {
+        ruleCandidateId: "candidate-saved",
+        classId,
+        title: "기존 규칙 후보",
+        description: "테스트용 규칙 후보",
+        status: "VOTING",
+        voteEndsAt: params.ruleCandidateVoteEndsAt,
+        votes: {
+          agree: 0,
+          needsRevision: 0,
+        },
+      },
+    ],
+    classroomRules: [
+      {
+        ruleId: "rule-saved",
+        classId,
+        title: "기존 교실 약속",
+        description: "테스트용 약속",
+        checkDate: params.ruleCheckDate,
+        status: "active",
+      },
+    ],
+  };
+}
+
+function getPersistedSnapshot() {
+  const raw = window.localStorage.getItem(STORAGE_KEY);
+
+  expect(raw).not.toBeNull();
+
+  const parsed = parseStoredSnapshot(raw!);
+
+  expect(parsed.ok).toBe(true);
+
+  if (!parsed.ok) {
+    throw new Error(parsed.message);
+  }
+
+  return parsed.snapshot;
 }
