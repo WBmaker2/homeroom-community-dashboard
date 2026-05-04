@@ -52,7 +52,10 @@ export function TeacherShell({
 }: TeacherShellProps) {
   const [activeView, setActiveView] = useState<ActiveView>("dashboard");
   const [shareMessage, setShareMessage] = useState("");
-  const openActivity = state.activities.find((activity) => activity.status === "open");
+  const isClassArchived = state.homeroomClass.status === "archived";
+  const openActivity = isClassArchived
+    ? undefined
+    : state.activities.find((activity) => activity.status === "open");
   const studentLink = openActivity ? createStudentLink(openActivity.code) : createStudentLink();
 
   async function copyStudentLink() {
@@ -107,7 +110,12 @@ export function TeacherShell({
               <Users size={16} aria-hidden="true" />
               <span>{state.homeroomClass.students.length}명</span>
             </div>
-            <button className="secondary-button" type="button" onClick={copyStudentLink}>
+            <button
+              className="secondary-button"
+              disabled={isClassArchived}
+              type="button"
+              onClick={copyStudentLink}
+            >
               <Copy size={16} aria-hidden="true" />
               학생 링크 복사
             </button>
@@ -121,6 +129,13 @@ export function TeacherShell({
         {shareMessage && (
           <p className="link-status" role="status">
             {shareMessage}
+          </p>
+        )}
+
+        {isClassArchived && (
+          <p className="archive-notice" role="status">
+            보관 학급은 읽기 전용입니다. 다시 운영하려면 학급 설정에서 상태를 운영 중으로
+            바꿔 주세요.
           </p>
         )}
 

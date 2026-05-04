@@ -35,6 +35,7 @@ export function StudentParticipation({
       ) ?? null,
     [codeInput, state.activities],
   );
+  const isClassArchived = state.homeroomClass.status === "archived";
   const targetCandidate = activity?.targetId
     ? state.ruleCandidates.find((candidate) => candidate.ruleCandidateId === activity.targetId)
     : null;
@@ -53,6 +54,7 @@ export function StudentParticipation({
 
     const gate = canAcceptSubmission({
       activity,
+      classStatus: state.homeroomClass.status,
       students: state.homeroomClass.students,
       studentNumberInput: studentNumber,
       previousSubmissions: state.submissions,
@@ -199,8 +201,16 @@ export function StudentParticipation({
                 <h1>{activity.title}</h1>
                 <p>{activity.isAnonymous ? "익명 참여" : "번호 확인 참여"}</p>
               </div>
-              <span className="status-chip">{activity.status === "open" ? "열림" : "닫힘"}</span>
+              <span className="status-chip">
+                {isClassArchived ? "보관 학급" : activity.status === "open" ? "열림" : "닫힘"}
+              </span>
             </div>
+
+            {isClassArchived && (
+              <p className="archive-notice">
+                보관된 학급 활동입니다. 선생님께 새 참여 코드를 확인해 주세요.
+              </p>
+            )}
 
             {activity.type === "ruleVote" && targetCandidate && (
               <div className="vote-choice">
@@ -273,7 +283,12 @@ export function StudentParticipation({
               </label>
             )}
 
-            <button className="primary-button wide" type="button" onClick={submit}>
+            <button
+              className="primary-button wide"
+              disabled={isClassArchived}
+              type="button"
+              onClick={submit}
+            >
               <Send size={16} aria-hidden="true" />
               제출
             </button>
@@ -317,7 +332,13 @@ export function StudentParticipation({
   );
 }
 
-function getGateMessage(reason: "unknownStudent" | "activityClosed" | "notOpenYet" | "alreadySubmitted") {
+function getGateMessage(
+  reason: "unknownStudent" | "activityClosed" | "notOpenYet" | "alreadySubmitted" | "classArchived",
+) {
+  if (reason === "classArchived") {
+    return "보관된 학급 활동입니다. 선생님께 새 참여 코드를 확인해 주세요.";
+  }
+
   if (reason === "unknownStudent") {
     return "학급 번호를 확인해 주세요.";
   }

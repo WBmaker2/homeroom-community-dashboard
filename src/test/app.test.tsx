@@ -84,6 +84,18 @@ function createStudentParticipationSnapshot(code = "JOIN-TEST-2345"): HomeroomDa
   };
 }
 
+function createArchivedParticipationSnapshot(code: string): HomeroomDataSnapshot {
+  const snapshot = createStudentParticipationSnapshot(code);
+
+  return {
+    ...snapshot,
+    homeroomClasses: snapshot.homeroomClasses.map((homeroomClass) => ({
+      ...homeroomClass,
+      status: "archived",
+    })),
+  };
+}
+
 describe("homeroom app workflows", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -156,6 +168,38 @@ describe("homeroom app workflows", () => {
 
     expect(screen.getByRole("status").textContent).toContain("학생을 삭제했습니다.");
     expect(screen.getAllByText("0명").length).toBeGreaterThan(0);
+  });
+
+  it("blocks duplicate roster numbers when adding and editing students", async () => {
+    const user = userEvent.setup();
+
+    unlockTeacherSession();
+    renderAt("/teacher");
+
+    await user.click(screen.getByRole("button", { name: "학급 설정" }));
+    await user.type(screen.getAllByLabelText("학급명")[0]!, "중복 확인 학급");
+    await user.click(screen.getByRole("button", { name: "학급 등록" }));
+
+    await user.type(screen.getAllByLabelText("번호")[0]!, "1");
+    await user.type(screen.getAllByLabelText("이름")[0]!, "홍길동");
+    await user.click(screen.getByRole("button", { name: "학생 등록" }));
+
+    await user.type(screen.getAllByLabelText("번호")[0]!, "01번");
+    await user.type(screen.getAllByLabelText("이름")[0]!, "김서연");
+    await user.click(screen.getByRole("button", { name: "학생 등록" }));
+
+    expect(screen.getByRole("status").textContent).toContain("이미 사용 중인 학생 번호입니다.");
+
+    await user.clear(screen.getAllByLabelText("번호")[0]!);
+    await user.type(screen.getAllByLabelText("번호")[0]!, "2");
+    await user.click(screen.getByRole("button", { name: "학생 등록" }));
+
+    const rosterNumberInputs = screen.getAllByLabelText("번호");
+    await user.clear(rosterNumberInputs.at(-1)!);
+    await user.type(rosterNumberInputs.at(-1)!, "1");
+    await user.click(screen.getAllByRole("button", { name: "저장" }).at(-1)!);
+
+    expect(screen.getByRole("status").textContent).toContain("이미 사용 중인 학생 번호입니다.");
   });
 
   it("blocks deleting the final remaining class", async () => {
@@ -240,6 +284,53 @@ describe("homeroom app workflows", () => {
     expect(screen.getByRole("button", { name: "학급 설정" })).toBeInTheDocument();
     expect(window.localStorage.getItem(TEACHER_PIN_STORAGE_KEY)).toBe("1234");
     expect(window.sessionStorage.getItem(TEACHER_UNLOCK_STORAGE_KEY)).toBe("true");
+  });
+
+  it("keeps archived classes read-only in teacher tools", async () => {
+    const user = userEvent.setup();
+    const archivedCode = "ARCH-TEST-0000";
+
+    unlockTeacherSession();
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      serializeSnapshot(
+        createSnapshotPayload({
+          snapshot: createArchivedParticipationSnapshot(archivedCode),
+          savedAt: "2026-05-03T09:00:00.000Z",
+        }),
+      ),
+    );
+
+    renderAt("/teacher");
+
+    expect(screen.getByText(/보관 학급은/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "학생 링크 복사" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "회의 안건" }));
+    expect(screen.getByRole("button", { name: "안건 제출 열기" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "학급 설정" }));
+    expect(screen.getByRole("button", { name: "학생 등록" })).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "저장" }).at(-1)!).toBeDisabled();
+  });
+
+  it("blocks student submissions for archived classes", () => {
+    const archivedCode = "ARCH-TEST-0000";
+
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      serializeSnapshot(
+        createSnapshotPayload({
+          snapshot: createArchivedParticipationSnapshot(archivedCode),
+          savedAt: "2026-05-03T09:00:00.000Z",
+        }),
+      ),
+    );
+
+    renderAt(`/join/${archivedCode}`);
+
+    expect(screen.getByText(/보관된 학급 활동입니다/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "제출" })).toBeDisabled();
   });
 
   it("keeps existing activity/candidate/rule dates when loading from existing storage", async () => {

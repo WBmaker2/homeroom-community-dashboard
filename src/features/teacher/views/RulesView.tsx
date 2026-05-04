@@ -45,6 +45,7 @@ export function RulesView({ state, actions }: RulesViewProps) {
   const [description, setDescription] = useState("");
   const [checkDate, setCheckDate] = useState(() => createDefaultRuleCheckDate(state.todayIso));
   const [hasManualCheckDate, setHasManualCheckDate] = useState(false);
+  const isClassArchived = state.homeroomClass.status === "archived";
 
   useEffect(() => {
     if (hasManualCheckDate) {
@@ -134,6 +135,12 @@ export function RulesView({ state, actions }: RulesViewProps) {
 
   return (
     <div className="view-stack">
+      {isClassArchived && (
+        <p className="archive-notice" role="status">
+          보관 학급은 규칙 합의를 읽기 전용으로 확인합니다.
+        </p>
+      )}
+
       <section className="two-column">
         <article className="panel">
           <div className="panel-heading">
@@ -147,17 +154,27 @@ export function RulesView({ state, actions }: RulesViewProps) {
           <div className="form-grid">
             <label>
               후보 제목
-              <input value={title} onChange={(event) => setTitle(event.target.value)} />
+              <input
+                disabled={isClassArchived}
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+              />
             </label>
             <label>
               설명
               <textarea
+                disabled={isClassArchived}
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 rows={3}
               />
             </label>
-            <button className="primary-button wide" type="button" onClick={addCandidate}>
+            <button
+              className="primary-button wide"
+              disabled={isClassArchived}
+              type="button"
+              onClick={addCandidate}
+            >
               후보 저장
             </button>
           </div>
@@ -202,6 +219,7 @@ export function RulesView({ state, actions }: RulesViewProps) {
             <label>
               점검일
               <input
+                disabled={isClassArchived}
                 value={checkDate}
                 onChange={(event) => {
                   setHasManualCheckDate(true);
@@ -213,17 +231,24 @@ export function RulesView({ state, actions }: RulesViewProps) {
             <div className="button-row">
               <button
                 className="secondary-button"
+                disabled={isClassArchived}
                 type="button"
                 onClick={() => updateCandidate(candidate.ruleCandidateId, { status: "COLLECTING_FEEDBACK" })}
               >
                 의견 수집
               </button>
-              <button className="secondary-button" type="button" onClick={() => openVote(candidate)}>
+              <button
+                className="secondary-button"
+                disabled={isClassArchived}
+                type="button"
+                onClick={() => openVote(candidate)}
+              >
                 <Megaphone size={16} aria-hidden="true" />
                 투표 열기
               </button>
               <button
                 className="secondary-button"
+                disabled={isClassArchived}
                 type="button"
                 onClick={() => updateCandidate(candidate.ruleCandidateId, { status: "VOTE_CLOSED" })}
               >
@@ -232,7 +257,7 @@ export function RulesView({ state, actions }: RulesViewProps) {
               <button
                 className="primary-button"
                 type="button"
-                disabled={candidate.status !== "VOTE_CLOSED"}
+                disabled={isClassArchived || candidate.status !== "VOTE_CLOSED"}
                 onClick={() => confirmCandidate(candidate)}
               >
                 <CheckCircle2 size={16} aria-hidden="true" />

@@ -15,6 +15,7 @@ import {
   createHomeroomClass,
   createStudent,
   detachStudentFromAgendaItems,
+  hasRosterNumberConflict,
   normalizeRosterNumber,
   removeStudentAssignments,
   removeStudentFromConstraints,
@@ -73,6 +74,19 @@ describe("student participation", () => {
     });
 
     expect(result).toEqual({ ok: false, reason: "activityClosed" });
+  });
+
+  it("blocks submissions for archived classes", () => {
+    const result = canAcceptSubmission({
+      activity: sampleActivities[0],
+      classStatus: "archived",
+      students: sampleClass.students,
+      studentNumberInput: "2",
+      previousSubmissions: [],
+      nowIso: "2026-05-03T10:00:00+09:00",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "classArchived" });
   });
 });
 
@@ -271,6 +285,12 @@ describe("class settings helpers", () => {
     expect(student.studentNumber).toBe("3");
     expect(student.displayName).toBe("홍길동");
     expect(normalizeRosterNumber(" 001번 ")).toBe("1");
+  });
+
+  it("detects duplicate roster numbers after normalization", () => {
+    expect(hasRosterNumberConflict(sampleClass.students, "02번")).toBe(true);
+    expect(hasRosterNumberConflict(sampleClass.students, "02번", "s02")).toBe(false);
+    expect(hasRosterNumberConflict(sampleClass.students, "31")).toBe(false);
   });
 
   it("cleans student-linked class data when a student is deleted", () => {

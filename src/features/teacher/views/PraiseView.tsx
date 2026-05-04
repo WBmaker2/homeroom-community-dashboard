@@ -15,6 +15,7 @@ type PraiseViewProps = {
 };
 
 export function PraiseView({ state, actions, signals, getStudentName }: PraiseViewProps) {
+  const isClassArchived = state.homeroomClass.status === "archived";
   const [studentId, setStudentId] = useState(state.homeroomClass.students[0]?.studentId ?? "");
   const [tag, setTag] = useState("협력");
   const [memo, setMemo] = useState("");
@@ -90,6 +91,12 @@ export function PraiseView({ state, actions, signals, getStudentName }: PraiseVi
 
   return (
     <div className="view-stack">
+      {isClassArchived && (
+        <p className="archive-notice" role="status">
+          보관 학급은 칭찬 기록과 제보를 읽기 전용으로 확인합니다.
+        </p>
+      )}
+
       <section className="two-column">
         <article className="panel">
           <div className="panel-heading">
@@ -103,7 +110,11 @@ export function PraiseView({ state, actions, signals, getStudentName }: PraiseVi
           <div className="form-grid">
             <label>
               학생
-              <select value={studentId} onChange={(event) => setStudentId(event.target.value)}>
+              <select
+                disabled={isClassArchived}
+                value={studentId}
+                onChange={(event) => setStudentId(event.target.value)}
+              >
                 {state.homeroomClass.students.map((student) => (
                   <option key={student.studentId} value={student.studentId}>
                     {student.studentNumber}. {student.displayName}
@@ -113,7 +124,11 @@ export function PraiseView({ state, actions, signals, getStudentName }: PraiseVi
             </label>
             <label>
               태그
-              <select value={tag} onChange={(event) => setTag(event.target.value)}>
+              <select
+                disabled={isClassArchived}
+                value={tag}
+                onChange={(event) => setTag(event.target.value)}
+              >
                 <option>협력</option>
                 <option>배려</option>
                 <option>정리</option>
@@ -124,13 +139,19 @@ export function PraiseView({ state, actions, signals, getStudentName }: PraiseVi
             <label>
               메모
               <textarea
+                disabled={isClassArchived}
                 value={memo}
                 onChange={(event) => setMemo(event.target.value)}
                 rows={4}
                 placeholder="관찰한 좋은 행동을 짧게 적어 주세요."
               />
             </label>
-            <button className="primary-button wide" type="button" onClick={addPraiseRecord}>
+            <button
+              className="primary-button wide"
+              disabled={isClassArchived}
+              type="button"
+              onClick={addPraiseRecord}
+            >
               기록 추가
             </button>
           </div>
@@ -162,6 +183,7 @@ export function PraiseView({ state, actions, signals, getStudentName }: PraiseVi
                   <div className="inline-actions">
                     <button
                       className="icon-button"
+                      disabled={isClassArchived}
                       type="button"
                       title="승인"
                       onClick={() => updateReviewStatus(record.praiseId, "approved")}
@@ -170,6 +192,7 @@ export function PraiseView({ state, actions, signals, getStudentName }: PraiseVi
                     </button>
                     <button
                       className="icon-button danger"
+                      disabled={isClassArchived}
                       type="button"
                       title="보류"
                       onClick={() => updateReviewStatus(record.praiseId, "deferred")}
@@ -191,6 +214,7 @@ export function PraiseView({ state, actions, signals, getStudentName }: PraiseVi
             <label>
               학생
               <select
+                disabled={isClassArchived}
                 value={draftStudentId}
                 onChange={(event) => setDraftStudentId(event.target.value)}
               >
@@ -210,6 +234,7 @@ export function PraiseView({ state, actions, signals, getStudentName }: PraiseVi
               </select>
             </label>
             <textarea
+              disabled={isClassArchived}
               value={editableDraft}
               onChange={(event) => setEditableDraft(event.target.value)}
               rows={6}

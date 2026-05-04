@@ -28,6 +28,7 @@ const agendaStatusLabels: Record<AgendaStatus, string> = {
 
 export function AgendaView({ state, actions, getStudentName }: AgendaViewProps) {
   const [manualAgendaText, setManualAgendaText] = useState("");
+  const isClassArchived = state.homeroomClass.status === "archived";
   const pendingCount = state.agendaItems.filter(
     (agenda) => agenda.status === "PENDING_REVIEW",
   ).length;
@@ -97,6 +98,12 @@ export function AgendaView({ state, actions, getStudentName }: AgendaViewProps) 
 
   return (
     <div className="view-stack">
+      {isClassArchived && (
+        <p className="archive-notice" role="status">
+          보관 학급은 안건을 읽기 전용으로 확인합니다.
+        </p>
+      )}
+
       <section className="two-column">
         <article className="panel">
           <div className="panel-heading">
@@ -104,7 +111,12 @@ export function AgendaView({ state, actions, getStudentName }: AgendaViewProps) 
               <h2>안건함</h2>
               <p>검토 대기 {pendingCount}건</p>
             </div>
-            <button className="primary-button" type="button" onClick={openAgendaActivity}>
+            <button
+              className="primary-button"
+              disabled={isClassArchived}
+              type="button"
+              onClick={openAgendaActivity}
+            >
               <Megaphone size={16} aria-hidden="true" />
               안건 제출 열기
             </button>
@@ -114,12 +126,18 @@ export function AgendaView({ state, actions, getStudentName }: AgendaViewProps) 
             <label>
               교사 추가 안건
               <textarea
+                disabled={isClassArchived}
                 value={manualAgendaText}
                 onChange={(event) => setManualAgendaText(event.target.value)}
                 rows={3}
               />
             </label>
-            <button className="secondary-button" type="button" onClick={addManualAgenda}>
+            <button
+              className="secondary-button"
+              disabled={isClassArchived}
+              type="button"
+              onClick={addManualAgenda}
+            >
               <Plus size={16} aria-hidden="true" />
               안건 추가
             </button>
@@ -164,6 +182,7 @@ export function AgendaView({ state, actions, getStudentName }: AgendaViewProps) 
             <label>
               회의용 문장
               <textarea
+                disabled={isClassArchived}
                 value={agenda.meetingText ?? ""}
                 onChange={(event) =>
                   updateAgenda(agenda.agendaId, { meetingText: event.target.value })
@@ -175,6 +194,7 @@ export function AgendaView({ state, actions, getStudentName }: AgendaViewProps) 
             <div className="button-row">
               <button
                 className="secondary-button"
+                disabled={isClassArchived}
                 type="button"
                 onClick={() => updateAgenda(agenda.agendaId, { status: "SELECTED", isPublic: true })}
               >
@@ -182,6 +202,7 @@ export function AgendaView({ state, actions, getStudentName }: AgendaViewProps) 
               </button>
               <button
                 className="secondary-button"
+                disabled={isClassArchived}
                 type="button"
                 onClick={() => updateAgenda(agenda.agendaId, { status: "DEFERRED" })}
               >
@@ -189,6 +210,7 @@ export function AgendaView({ state, actions, getStudentName }: AgendaViewProps) 
               </button>
               <button
                 className="secondary-button"
+                disabled={isClassArchived}
                 type="button"
                 onClick={() => updateAgenda(agenda.agendaId, { status: "MERGED" })}
               >
@@ -196,6 +218,7 @@ export function AgendaView({ state, actions, getStudentName }: AgendaViewProps) 
               </button>
               <button
                 className="secondary-button"
+                disabled={isClassArchived}
                 type="button"
                 onClick={() => updateAgenda(agenda.agendaId, { status: "CLOSED" })}
               >
@@ -204,7 +227,7 @@ export function AgendaView({ state, actions, getStudentName }: AgendaViewProps) 
               <button
                 className="primary-button"
                 type="button"
-                disabled={agenda.status !== "SELECTED"}
+                disabled={isClassArchived || agenda.status !== "SELECTED"}
                 onClick={() => createCandidate(agenda)}
               >
                 규칙 후보 만들기

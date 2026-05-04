@@ -35,6 +35,7 @@ export function SettingsView({ state, actions }: SettingsViewProps) {
   } | null>(null);
   const [importConfirmed, setImportConfirmed] = useState(false);
   const visibleMessage = message || state.persistence.message;
+  const isClassArchived = state.homeroomClass.status === "archived";
 
   useEffect(() => {
     setClassName(state.homeroomClass.name);
@@ -77,11 +78,17 @@ export function SettingsView({ state, actions }: SettingsViewProps) {
       return;
     }
 
-    actions.addStudent({
+    const result = actions.addStudent({
       studentNumber,
       name: studentName,
       displayName: studentDisplayName,
     });
+
+    if (!result.ok) {
+      setMessage(getStudentMutationMessage(result.reason));
+      return;
+    }
+
     setStudentNumber("");
     setStudentName("");
     setStudentDisplayName("");
@@ -205,6 +212,7 @@ export function SettingsView({ state, actions }: SettingsViewProps) {
                 <div className="inline-actions">
                   <button
                     className="icon-button"
+                    disabled={homeroomClass.status === "archived"}
                     type="button"
                     title="보관"
                     onClick={() => actions.archiveHomeroomClass(homeroomClass.classId)}
@@ -236,14 +244,26 @@ export function SettingsView({ state, actions }: SettingsViewProps) {
             <Save size={22} aria-hidden="true" />
           </div>
 
+          {isClassArchived && (
+            <p className="archive-notice">
+              보관 학급은 이름, 학교급, 학생 명부를 읽기 전용으로 유지합니다. 다시 운영하려면
+              상태를 운영 중으로 바꿔 저장해 주세요.
+            </p>
+          )}
+
           <div className="form-grid">
             <label>
               학급명
-              <input value={className} onChange={(event) => setClassName(event.target.value)} />
+              <input
+                disabled={isClassArchived}
+                value={className}
+                onChange={(event) => setClassName(event.target.value)}
+              />
             </label>
             <label>
               학교급
               <select
+                disabled={isClassArchived}
                 value={gradeBand}
                 onChange={(event) => setGradeBand(event.target.value as HomeroomClass["gradeBand"])}
               >
@@ -276,6 +296,7 @@ export function SettingsView({ state, actions }: SettingsViewProps) {
             <label>
               번호
               <input
+                disabled={isClassArchived}
                 value={studentNumber}
                 onChange={(event) => setStudentNumber(event.target.value)}
                 placeholder="예: 1"
@@ -284,6 +305,7 @@ export function SettingsView({ state, actions }: SettingsViewProps) {
             <label>
               이름
               <input
+                disabled={isClassArchived}
                 value={studentName}
                 onChange={(event) => setStudentName(event.target.value)}
                 placeholder="예: 김민준"
@@ -292,12 +314,18 @@ export function SettingsView({ state, actions }: SettingsViewProps) {
             <label>
               표시명
               <input
+                disabled={isClassArchived}
                 value={studentDisplayName}
                 onChange={(event) => setStudentDisplayName(event.target.value)}
                 placeholder="비우면 이름을 사용합니다"
               />
             </label>
-            <button className="primary-button wide" type="button" onClick={addStudent}>
+            <button
+              className="primary-button wide"
+              disabled={isClassArchived}
+              type="button"
+              onClick={addStudent}
+            >
               학생 등록
             </button>
           </div>
@@ -318,11 +346,21 @@ export function SettingsView({ state, actions }: SettingsViewProps) {
             {state.homeroomClass.students.map((student) => (
               <StudentRow
                 key={student.studentId}
+                disabled={isClassArchived}
                 student={student}
-                onSave={(patch) => actions.updateStudent(student.studentId, patch)}
+                onSave={(patch) => {
+                  const result = actions.updateStudent(student.studentId, patch);
+
+                  setMessage(
+                    result.ok ? "학생 정보를 저장했습니다." : getStudentMutationMessage(result.reason),
+                  );
+                }}
                 onDelete={() => {
-                  actions.deleteStudent(student.studentId);
-                  setMessage("학생을 삭제했습니다.");
+                  const result = actions.deleteStudent(student.studentId);
+
+                  setMessage(
+                    result.ok ? "학생을 삭제했습니다." : getStudentMutationMessage(result.reason),
+                  );
                 }}
               />
             ))}
@@ -482,10 +520,12 @@ function formatDateTime(value: string | null | undefined): string {
 
 function StudentRow({
   student,
+  disabled,
   onSave,
   onDelete,
 }: {
   student: Student;
+  disabled: boolean;
   onSave: (patch: Partial<Pick<Student, "studentNumber" | "name" | "displayName">>) => void;
   onDelete: () => void;
 }) {
@@ -503,28 +543,54 @@ function StudentRow({
     <article className="roster-row">
       <label>
         번호
-        <input value={studentNumber} onChange={(event) => setStudentNumber(event.target.value)} />
+        <input
+          disabled={disabled}
+          value={studentNumber}
+          onChange={(event) => setStudentNumber(event.target.value)}
+        />
       </label>
       <label>
         이름
-        <input value={name} onChange={(event) => setName(event.target.value)} />
+        <input disabled={disabled} value={name} onChange={(event) => setName(event.target.value)} />
       </label>
       <label>
         표시명
-        <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
+        <input
+          disabled={disabled}
+          value={displayName}
+          onChange={(event) => setDisplayName(event.target.value)}
+        />
       </label>
       <div className="button-row">
         <button
           className="secondary-button"
+          disabled={disabled}
           type="button"
           onClick={() => onSave({ studentNumber, name, displayName })}
         >
           저장
         </button>
-        <button className="secondary-button danger-button" type="button" onClick={onDelete}>
+        <button
+          className="secondary-button danger-button"
+          disabled={disabled}
+          type="button"
+          onClick={onDelete}
+        >
           삭제
         </button>
       </div>
     </article>
   );
+}
+
+function getStudentMutationMessage(reason: "classArchived" | "duplicateNumber" | "invalidInput") {
+  if (reason === "classArchived") {
+    return "보관 학급은 학생 명부를 수정할 수 없습니다.";
+  }
+
+  if (reason === "duplicateNumber") {
+    return "이미 사용 중인 학생 번호입니다.";
+  }
+
+  return "학생 번호와 이름을 확인해 주세요.";
 }

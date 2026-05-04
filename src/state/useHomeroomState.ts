@@ -15,6 +15,8 @@ import {
   createHomeroomClass,
   createStudent,
   detachStudentFromAgendaItems,
+  hasRosterNumberConflict,
+  normalizeRosterNumber,
   removeStudentAssignments,
   removeStudentFromConstraints,
   removeStudentPraiseRecords,
@@ -83,15 +85,22 @@ export type HomeroomState = {
   };
 };
 
+export type StudentMutationResult =
+  | { ok: true }
+  | { ok: false; reason: "classArchived" | "duplicateNumber" | "invalidInput" };
+
 export type HomeroomActions = {
   addHomeroomClass: (input: NewClassInput) => void;
   updateHomeroomClass: (patch: Partial<Pick<HomeroomClass, "name" | "gradeBand" | "status">>) => void;
   archiveHomeroomClass: (classId: string) => void;
   deleteHomeroomClass: (classId: string) => boolean;
   setActiveClassId: Dispatch<SetStateAction<string>>;
-  addStudent: (input: NewStudentInput) => void;
-  updateStudent: (studentId: StudentId, patch: Partial<Pick<Student, "studentNumber" | "name" | "displayName">>) => void;
-  deleteStudent: (studentId: StudentId) => void;
+  addStudent: (input: NewStudentInput) => StudentMutationResult;
+  updateStudent: (
+    studentId: StudentId,
+    patch: Partial<Pick<Student, "studentNumber" | "name" | "displayName">>,
+  ) => StudentMutationResult;
+  deleteStudent: (studentId: StudentId) => StudentMutationResult;
   setPraiseRecords: Dispatch<SetStateAction<PraiseRecord[]>>;
   setAgendaItems: Dispatch<SetStateAction<AgendaItem[]>>;
   setRuleCandidates: Dispatch<SetStateAction<RuleCandidate[]>>;
@@ -301,21 +310,37 @@ export function useHomeroomState() {
     },
   };
 
+  const canEditActiveClass = activeClass.status === "active";
   const setActivePraiseRecords = createClassScopedSetter(
     setPraiseRecords,
     activeClass.classId,
+    canEditActiveClass,
   );
-  const setActiveAgendaItems = createClassScopedSetter(setAgendaItems, activeClass.classId);
+  const setActiveAgendaItems = createClassScopedSetter(
+    setAgendaItems,
+    activeClass.classId,
+    canEditActiveClass,
+  );
   const setActiveRuleCandidates = createClassScopedSetter(
     setRuleCandidates,
     activeClass.classId,
+    canEditActiveClass,
   );
   const setActiveClassroomRules = createClassScopedSetter(
     setClassroomRules,
     activeClass.classId,
+    canEditActiveClass,
   );
-  const setActiveActivities = createClassScopedSetter(setActivities, activeClass.classId);
-  const setActiveSubmissions = createClassScopedSetter(setSubmissions, activeClass.classId);
+  const setActiveActivities = createClassScopedSetter(
+    setActivities,
+    activeClass.classId,
+    canEditActiveClass,
+  );
+  const setActiveSubmissions = createClassScopedSetter(
+    setSubmissions,
+    activeClass.classId,
+    canEditActiveClass,
+  );
 
   const actions: HomeroomActions = {
     addHomeroomClass,
@@ -430,9 +455,17 @@ export function useHomeroomState() {
     return true;
   }
 
-  function addStudent(input: NewStudentInput) {
-    if (input.studentNumber.trim().length === 0 || input.name.trim().length === 0) {
-      return;
+  function addStudent(input: NewStudentInput): StudentMutationResult {
+    if (!canEditActiveClass) {
+      return { ok: false, reason: "classArchived" };
+    }
+
+    if (normalizeRosterNumber(input.studentNumber).length === 0 || input.name.trim().length === 0) {
+      return { ok: false, reason: "invalidInput" };
+    }
+
+    if (hasRosterNumberConflict(activeClass.students, input.studentNumber)) {
+      return { ok: false, reason: "duplicateNumber" };
     }
 
     const nextStudent = createStudent(input, Date.now());
@@ -444,35 +477,59 @@ export function useHomeroomState() {
           : homeroomClass,
       ),
     );
+
+    return { ok: true };
   }
 
   function updateStudent(
     studentId: StudentId,
     patch: Partial<Pick<Student, "studentNumber" | "name" | "displayName">>,
-  ) {
+  ): StudentMutationResult {
+    if (!canEditActiveClass) {
+      return { ok: false, reason: "classArchived" };
+    }
+
+    const existingStudent = activeClass.students.find((student) => student.studentId === studentId);
+
+    if (!existingStudent) {
+      return { ok: false, reason: "invalidInput" };
+    }
+
+    const nextStudentNumber =
+      patch.studentNumber === undefined
+        ? existingStudent.studentNumber
+        : normalizeRosterNumber(patch.studentNumber);
+    const nextName = patch.name === undefined ? existingStudent.name : patch.name.trim();
+
+    if (nextStudentNumber.length === 0 || nextName.length === 0) {
+      return { ok: false, reason: "invalidInput" };
+    }
+
+    if (hasRosterNumberConflict(activeClass.students, nextStudentNumber, studentId)) {
+      return { ok: false, reason: "duplicateNumber" };
+    }
+
     setHomeroomClasses((classes) =>
       classes.map((homeroomClass) =>
         homeroomClass.classId === activeClass.classId
           ? {
               ...homeroomClass,
               students: homeroomClass.students.map((student) =>
-                student.studentId === studentId
-                  ? {
-                      ...student,
-                      ...patch,
-                      studentNumber: patch.studentNumber?.trim() || student.studentNumber,
-                      name: patch.name?.trim() || student.name,
-                      displayName: patch.displayName?.trim() || student.displayName,
-                    }
-                  : student,
+                student.studentId === studentId ? normalizeStudentPatch(student, patch) : student,
               ),
             }
           : homeroomClass,
       ),
     );
+
+    return { ok: true };
   }
 
-  function deleteStudent(studentId: StudentId) {
+  function deleteStudent(studentId: StudentId): StudentMutationResult {
+    if (!canEditActiveClass) {
+      return { ok: false, reason: "classArchived" };
+    }
+
     setHomeroomClasses((classes) =>
       classes.map((homeroomClass) =>
         homeroomClass.classId === activeClass.classId
@@ -510,9 +567,15 @@ export function useHomeroomState() {
           submission.classId !== activeClass.classId || submission.studentId !== studentId,
       ),
     );
+
+    return { ok: true };
   }
 
   function setActiveSeatMap(next: SetStateAction<SeatMap>) {
+    if (!canEditActiveClass) {
+      return;
+    }
+
     setClassSeatMaps((maps) => {
       const current = maps[activeClass.classId] ?? createDefaultSeatMap();
       const nextSeatMap = typeof next === "function" ? next(current) : next;
@@ -522,6 +585,10 @@ export function useHomeroomState() {
   }
 
   function setActiveSeatingConstraints(next: SetStateAction<SeatingConstraint[]>) {
+    if (!canEditActiveClass) {
+      return;
+    }
+
     setClassSeatingConstraints((constraints) => {
       const current = constraints[activeClass.classId] ?? [];
       const nextConstraints = typeof next === "function" ? next(current) : next;
@@ -531,6 +598,10 @@ export function useHomeroomState() {
   }
 
   function setActiveManualAssignments(next: SetStateAction<SeatAssignment[]>) {
+    if (!canEditActiveClass) {
+      return;
+    }
+
     setClassManualAssignments((assignments) => {
       const current = assignments[activeClass.classId] ?? [];
       const nextAssignments = typeof next === "function" ? next(current) : next;
@@ -611,8 +682,13 @@ function createDefaultSeatMap(): SeatMap {
 function createClassScopedSetter<T extends { classId: string }>(
   setGlobal: Dispatch<SetStateAction<T[]>>,
   classId: string,
+  canEdit: boolean,
 ): Dispatch<SetStateAction<T[]>> {
   return (next) => {
+    if (!canEdit) {
+      return;
+    }
+
     setGlobal((globalItems) => {
       const currentClassItems = globalItems.filter((item) => item.classId === classId);
       const nextClassItems = typeof next === "function" ? next(currentClassItems) : next;
@@ -620,6 +696,26 @@ function createClassScopedSetter<T extends { classId: string }>(
 
       return [...nextClassItems, ...otherClassItems];
     });
+  };
+}
+
+function normalizeStudentPatch(
+  student: Student,
+  patch: Partial<Pick<Student, "studentNumber" | "name" | "displayName">>,
+): Student {
+  const name = patch.name === undefined ? student.name : patch.name.trim();
+  const displayName =
+    patch.displayName === undefined ? student.displayName : patch.displayName.trim() || name;
+
+  return {
+    ...student,
+    ...patch,
+    studentNumber:
+      patch.studentNumber === undefined
+        ? student.studentNumber
+        : normalizeRosterNumber(patch.studentNumber),
+    name,
+    displayName,
   };
 }
 

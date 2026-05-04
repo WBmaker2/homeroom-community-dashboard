@@ -45,6 +45,24 @@ export function normalizeRosterNumber(input: string): string {
   return input.trim().replace(/\D/g, "").replace(/^0+(?=\d)/, "");
 }
 
+export function hasRosterNumberConflict(
+  students: Student[],
+  studentNumber: string,
+  exceptStudentId?: StudentId,
+): boolean {
+  const normalizedNumber = normalizeRosterNumber(studentNumber);
+
+  if (normalizedNumber.length === 0) {
+    return false;
+  }
+
+  return students.some(
+    (student) =>
+      student.studentId !== exceptStudentId &&
+      normalizeRosterNumber(student.studentNumber) === normalizedNumber,
+  );
+}
+
 export function removeStudentFromConstraints(
   constraints: SeatingConstraint[],
   studentId: StudentId,

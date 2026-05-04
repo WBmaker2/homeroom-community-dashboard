@@ -27,6 +27,7 @@ export function SeatingView({
   const [frontStudentId, setFrontStudentId] = useState(defaultStudentId);
   const [separateA, setSeparateA] = useState(defaultStudentId);
   const [separateB, setSeparateB] = useState(state.homeroomClass.students[1]?.studentId ?? "");
+  const isClassArchived = state.homeroomClass.status === "archived";
   const availableSeats = useMemo(() => listAvailableSeats(state.seatMap), [state.seatMap]);
   const assignmentBySeat = new Map(
     seatingPlan.assignments.map((assignment) => [assignment.seatId, assignment.studentId]),
@@ -145,13 +146,24 @@ export function SeatingView({
 
   return (
     <div className="view-stack">
+      {isClassArchived && (
+        <p className="archive-notice" role="status">
+          보관 학급은 자리 배치를 읽기 전용으로 확인합니다.
+        </p>
+      )}
+
       <section className="panel">
         <div className="panel-heading">
           <div>
             <h2>자리 배치 시뮬레이터</h2>
             <p>추천안은 보조 자료이며, 교사가 직접 바꾼 배치를 우선 표시합니다.</p>
           </div>
-          <button className="primary-button" type="button" onClick={regenerate}>
+          <button
+            className="primary-button"
+            disabled={isClassArchived}
+            type="button"
+            onClick={regenerate}
+          >
             <RefreshCcw size={16} aria-hidden="true" />
             추천 다시 만들기
           </button>
@@ -168,6 +180,7 @@ export function SeatingView({
                 return (
                   <button
                     className={isDisabled ? "seat-cell disabled" : "seat-cell"}
+                    disabled={isClassArchived}
                     key={seatId}
                     type="button"
                     onClick={() => setSelectedSeatId(seatId)}
@@ -185,6 +198,7 @@ export function SeatingView({
             <label>
               학생
               <select
+                disabled={isClassArchived}
                 value={selectedStudentId}
                 onChange={(event) => setSelectedStudentId(event.target.value)}
               >
@@ -199,6 +213,7 @@ export function SeatingView({
             <label>
               좌석
               <select
+                disabled={isClassArchived}
                 value={selectedSeatId}
                 onChange={(event) => setSelectedSeatId(event.target.value)}
               >
@@ -210,7 +225,12 @@ export function SeatingView({
               </select>
             </label>
 
-            <button className="primary-button wide" type="button" onClick={assignSeat}>
+            <button
+              className="primary-button wide"
+              disabled={isClassArchived}
+              type="button"
+              onClick={assignSeat}
+            >
               선택 좌석으로 옮기기
             </button>
           </div>
@@ -223,7 +243,11 @@ export function SeatingView({
           <div className="form-grid">
             <label>
               앞자리 권장 학생
-              <select value={frontStudentId} onChange={(event) => setFrontStudentId(event.target.value)}>
+              <select
+                disabled={isClassArchived}
+                value={frontStudentId}
+                onChange={(event) => setFrontStudentId(event.target.value)}
+              >
                 {state.homeroomClass.students.map((student) => (
                   <option key={student.studentId} value={student.studentId}>
                     {student.displayName}
@@ -231,7 +255,12 @@ export function SeatingView({
                 ))}
               </select>
             </label>
-            <button className="secondary-button" type="button" onClick={addFrontCondition}>
+            <button
+              className="secondary-button"
+              disabled={isClassArchived}
+              type="button"
+              onClick={addFrontCondition}
+            >
               앞 2줄 조건 추가
             </button>
           </div>
@@ -239,7 +268,11 @@ export function SeatingView({
           <div className="form-grid compact">
             <label>
               분리 학생 1
-              <select value={separateA} onChange={(event) => setSeparateA(event.target.value)}>
+              <select
+                disabled={isClassArchived}
+                value={separateA}
+                onChange={(event) => setSeparateA(event.target.value)}
+              >
                 {state.homeroomClass.students.map((student) => (
                   <option key={student.studentId} value={student.studentId}>
                     {student.displayName}
@@ -249,7 +282,11 @@ export function SeatingView({
             </label>
             <label>
               분리 학생 2
-              <select value={separateB} onChange={(event) => setSeparateB(event.target.value)}>
+              <select
+                disabled={isClassArchived}
+                value={separateB}
+                onChange={(event) => setSeparateB(event.target.value)}
+              >
                 {state.homeroomClass.students.map((student) => (
                   <option key={student.studentId} value={student.studentId}>
                     {student.displayName}
@@ -257,7 +294,12 @@ export function SeatingView({
                 ))}
               </select>
             </label>
-            <button className="secondary-button" type="button" onClick={addSeparateCondition}>
+            <button
+              className="secondary-button"
+              disabled={isClassArchived}
+              type="button"
+              onClick={addSeparateCondition}
+            >
               분리 조건 추가
             </button>
           </div>

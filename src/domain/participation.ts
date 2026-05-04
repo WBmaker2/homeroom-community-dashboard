@@ -9,7 +9,15 @@ import type {
 
 export type SubmissionGate =
   | { ok: true; student: Student; participationKey: string }
-  | { ok: false; reason: "unknownStudent" | "activityClosed" | "notOpenYet" | "alreadySubmitted" };
+  | {
+      ok: false;
+      reason:
+        | "unknownStudent"
+        | "activityClosed"
+        | "notOpenYet"
+        | "alreadySubmitted"
+        | "classArchived";
+    };
 
 export function normalizeStudentNumber(input: string): string {
   const numeric = input.trim().replace(/\D/g, "");
@@ -36,6 +44,7 @@ export function buildParticipationKey(
 
 export function canAcceptSubmission(params: {
   activity: ParticipationActivity;
+  classStatus?: "active" | "archived";
   students: Student[];
   studentNumberInput: string;
   previousSubmissions: ParticipationSubmission[];
@@ -45,6 +54,10 @@ export function canAcceptSubmission(params: {
 
   if (!student) {
     return { ok: false, reason: "unknownStudent" };
+  }
+
+  if (params.classStatus === "archived") {
+    return { ok: false, reason: "classArchived" };
   }
 
   const now = new Date(params.nowIso).getTime();

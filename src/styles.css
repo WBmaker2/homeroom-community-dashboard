@@ -53,6 +53,13 @@ textarea {
   resize: vertical;
 }
 
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
 label {
   display: grid;
   gap: 7px;
@@ -324,6 +331,18 @@ label {
   word-break: break-all;
 }
 
+.archive-notice {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #d7d2c5;
+  border-radius: 8px;
+  background: #fff8e6;
+  color: #5f4a20;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
 .two-column {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
@@ -543,7 +562,9 @@ label {
 }
 
 .primary-button:disabled,
-.secondary-button:disabled {
+.secondary-button:disabled,
+.icon-button:disabled,
+.seat-cell:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
