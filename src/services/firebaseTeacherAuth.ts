@@ -89,7 +89,7 @@ export async function signInTeacherWithEmail(
 ): Promise<TeacherSession> {
   const config = requireTeacherAuthConfig();
   const url = buildApiUrl(IDENTITY_TOOLKIT_BASE_URL, config.apiKey);
-  let payload: SignInResponse;
+  let rawPayload: unknown;
 
   try {
     const response = await fetch(url, {
@@ -104,7 +104,7 @@ export async function signInTeacherWithEmail(
       throw new Error(TEACHER_SIGN_IN_ERROR);
     }
 
-    payload = (await response.json()) as SignInResponse;
+    rawPayload = await response.json();
   } catch (error) {
     if (error instanceof Error && error.message === TEACHER_AUTH_CONFIG_DISABLED_REASON) {
       throw error;
@@ -112,6 +112,11 @@ export async function signInTeacherWithEmail(
     throw new Error(TEACHER_SIGN_IN_ERROR);
   }
 
+  if (!isSignInPayload(rawPayload)) {
+    throw new Error(TEACHER_SIGN_IN_ERROR);
+  }
+
+  const payload = rawPayload;
   const session = mapSignInSession(payload);
 
   if (!session) {
@@ -313,6 +318,10 @@ function isTeacherSession(value: unknown): value is TeacherSession {
     typeof value.expiresAt === "number" &&
     Number.isFinite(value.expiresAt)
   );
+}
+
+function isSignInPayload(value: unknown): value is SignInResponse {
+  return isObject(value);
 }
 
 function isRefreshPayload(value: unknown): value is RefreshResponse {

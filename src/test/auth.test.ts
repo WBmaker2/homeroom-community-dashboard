@@ -103,6 +103,14 @@ describe("firebase teacher auth service", () => {
     );
   });
 
+  it("throws stable sign-in error when response payload is null", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(new Response(JSON.stringify(null), { status: 200 }));
+
+    await expect(signInTeacherWithEmail("teacher@example.com", "password123")).rejects.toThrow(
+      TEACHER_SIGN_IN_ERROR,
+    );
+  });
+
   it("validates stored session shape and discards invalid data", () => {
     const storage = createMemoryStorage();
     storage.setItem(
@@ -316,7 +324,24 @@ describe("firebase teacher auth service", () => {
   });
 
   it("throws stable terminal refresh error when response payload is null", async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(new Response(JSON.stringify(null), { status: 200 }));
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(JSON.stringify(null), { status: 200 }),
+    );
+    await expect(
+      refreshTeacherSession({
+        teacherUid: "teacher-uid",
+        email: "teacher@example.com",
+        idToken: "id-token",
+        refreshToken: "refresh-token",
+        expiresAt: Date.now() - 1000,
+      }),
+    ).rejects.toThrow(TEACHER_SESSION_REFRESH_ERROR);
+  });
+
+  it("throws stable terminal refresh error when mapped fields are invalid", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(JSON.stringify({ user_id: 123, expires_in: "not-a-number" }), { status: 200 }),
+    );
     await expect(
       refreshTeacherSession({
         teacherUid: "teacher-uid",
