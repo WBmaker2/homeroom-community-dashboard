@@ -67,7 +67,8 @@ GitHub Variables 또는 배포 환경 변수로만 주입합니다.
 `homeroomPublicActivities/{activityCode}` 문서에 다음 필드를 추가합니다.
 
 - `teacherUid` (필수, 새로 게시되는 문서): Firestore `request.auth.uid`
-- `teacherEmail` (선택): 디버깅/운영 조회 보조값
+
+`teacherEmail`은 공개 활동 문서에 저장하지 않습니다. 교사 이메일은 **로그인 세션(로컬 세션 객체)** 또는 교사 전용 내부 기록에만 보관합니다.
 
 기존 필드(`teacherId`, `code`, `classId`, `activityId`, `payload` 등)는 기존 방식 유지.  
 `payload`는 기존 JSON 구조를 유지해 기존 파서 범위를 최소화합니다.
@@ -81,7 +82,6 @@ homeroomPublicActivities/{code}
   code
   teacherId
   teacherUid
-  teacherEmail (선택)
   classId
   activityId
   publishedAt
@@ -124,6 +124,18 @@ service cloud.firestore {
       return v.app == "homeroom-community-dashboard" && v.schemaVersion == 1;
     }
 
+    function isPublicActivityWrite(code) {
+      return isHomeroomApp(request.resource.data)
+        && request.resource.data.code is string
+        && request.resource.data.code == code
+        && request.resource.data.teacherUid is string
+        && request.resource.data.teacherUid == request.auth.uid
+        && request.resource.data.teacherId is string
+        && request.resource.data.classId is string
+        && request.resource.data.activityId is string
+        && request.resource.data.payload is string;
+    }
+
     function teacherAuthMatch(teacherUid) {
       return request.auth != null && request.auth.uid == teacherUid;
     }
@@ -147,13 +159,16 @@ service cloud.firestore {
     match /homeroomPublicActivities/{code} {
       allow read: if isHomeroomApp(resource.data);
 
-      allow create: if isHomeroomApp(request.resource.data)
-        && request.resource.data.teacherUid is string
-        && request.resource.data.teacherUid == request.auth.uid;
+      allow create: if isPublicActivityWrite(code)
+        && request.auth != null;
 
-      allow update: if teacherAuthMatch(resource.data.teacherUid)
-        && isHomeroomApp(request.resource.data)
-        && request.resource.data.teacherUid == resource.data.teacherUid;
+      allow update: if isPublicActivityWrite(code)
+        && teacherAuthMatch(resource.data.teacherUid)
+        && request.resource.data.teacherUid == resource.data.teacherUid
+        && request.resource.data.teacherId is string
+        && request.resource.data.classId is string
+        && request.resource.data.activityId is string
+        && request.resource.data.payload is string;
 
       allow delete: if teacherAuthMatch(resource.data.teacherUid);
 
@@ -196,14 +211,16 @@ service cloud.firestore {
 
 - `localStorage` 키(예시): `homeroom-community-dashboard:teacher-session:v1`
 - 저장 항목: `{ uid, email, idToken, refreshToken, expiresAt }`
-- 앱 시작 시 세션 복원, 만료 시 재로그인 요구
-- 세션 파기는 `session signOut`으로 localStorage 제거
+- 앱 시작 시 세션 복원 후 `idToken` 만료 여부를 확인
+- 만료 시 `refreshToken`으로 토큰 갱신 시도
+- 갱신 성공 시 새 `idToken`와 만료 시간을 갱신해 세션 유지
+- 갱신 실패(403/400 등) 시에만 `signOut` 실행하여 `localStorage` 제거
 
 #### 3) 요청 라우팅
 
 - 교사 클라우드 쓰기/읽기/삭제 API는 `Authorization: Bearer ${idToken}` 헤더 사용
 - 학생 참가/조회 API는 헤더 없이 기존대로 유지
-- 공통 공통: 기존 `getCloudParticipationConfig` 및 `FIRESTORE_BASE_URL` 사용 패턴 유지
+- 공통: 기존 `getCloudParticipationConfig` 및 `FIRESTORE_BASE_URL` 사용 패턴 유지
 
 ## 교사 UX 설계
 
@@ -233,14 +250,17 @@ service cloud.firestore {
 
 ## 마이그레이션 및 호환성
 
-- 기존 로컬 `localStorage` 데이터는 유지되고 변경하지 않음.
-- 기존에 이미 공개 게시된 활동 중 `teacherUid` 미기록 문서는:
-  - 학생 참여 조회/제출에는 영향이 없음(활동 조회는 공개).
-  - 교사 운영 패널에서의 제출 목록 조회·삭제는 동작이 제한될 수 있으므로, 운영자가 재게시 권장.
+- 기존 `localStorage` 세션 데이터(기존 로그인 상태)는 만료 정책 갱신 로직 하에서 재해석되며, `teacherUid` 소유권만 새 규칙에서 요구됩니다.
+- 기존 공개 문서는 배포 이전 소유자 정보가 없어 `teacherUid` 미기록 문서가 존재할 수 있습니다.
+- 이런 문서는 새 규칙 배포 후에도 **in-place로 소유자 claim이 되지 않습니다**.
+- 복구 경로(둘 중 하나는 필수):
+  1. 교사가 앱에 로그인 후 필요한 활동을 재게시하여 새 participation code를 생성하고 소유권(`teacherUid`)을 부여
+  2. 운영자가 사전 배포 이전에 Admin SDK/스크립트로 owner 보강 마이그레이션 수행(검증 가능한 대상에만 `teacherUid` 일괄 채움)
+- 앱은 재게시가 필요한 항목을 감지하면 공지 배너 또는 카드로 **“소유자 재등록 필요(재게시)”** 안내를 표시해야 합니다.
 - 점진 적용 전략:
-  1. 기존 활동은 읽기/학생 제출은 유지
-  2. 기존 문서에는 `teacherUid`가 없으면 교사가 로그인 후 “재게시” 버튼으로 소유권을 부여
-  3. 신규 게시물부터 `teacherUid` 필수로 기록
+  1. 기존 활동은 학생 조회/제출은 계속 동작
+  2. `teacherUid` 미기록 문서는 교사 패널에서 조회/삭제가 차단될 수 있으므로, 교사 세션 진입 시 재게시 유도
+  3. 신규 게시물부터 `teacherUid` 필수 기록
 
 ## 테스트/검증 체크리스트
 
@@ -274,6 +294,6 @@ service cloud.firestore {
 - 문서 반영: `docs/2026-05-05-firebase-auth-permissions-design.md` (본 문서)
 - 다음 단계 구현에서 참고:
   - `src/services/cloudParticipationClient.ts` 인증 헤더 적용
-  - CloudActivitySnapshot 생성/파싱에 `teacherUid`/`teacherEmail` 반영
+  - CloudActivitySnapshot 생성/파싱에 `teacherUid` 반영(공개 문서에서는 teacherEmail 미저장)
   - `firestore.rules` 업데이트
   - 교사 클라우드 패널 로그인 상태 UI/가드
