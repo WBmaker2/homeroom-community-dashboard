@@ -22,6 +22,7 @@ import {
   removeStudentPraiseRecords,
   type NewClassInput,
   type NewStudentInput,
+  type RosterImportStudent,
 } from "../domain/classSettings";
 import { computeDashboardSignals } from "../domain/dashboardSignals";
 import {
@@ -89,6 +90,14 @@ export type StudentMutationResult =
   | { ok: true }
   | { ok: false; reason: "classArchived" | "duplicateNumber" | "invalidInput" };
 
+export type BulkStudentImportResult = {
+  addedCount: number;
+  skippedRows: {
+    rowNumber: number;
+    reason: "classArchived" | "duplicateNumber" | "invalidInput";
+  }[];
+};
+
 export type HomeroomActions = {
   addHomeroomClass: (input: NewClassInput) => void;
   updateHomeroomClass: (patch: Partial<Pick<HomeroomClass, "name" | "gradeBand" | "status">>) => void;
@@ -101,6 +110,7 @@ export type HomeroomActions = {
     patch: Partial<Pick<Student, "studentNumber" | "name" | "displayName">>,
   ) => StudentMutationResult;
   deleteStudent: (studentId: StudentId) => StudentMutationResult;
+  importStudents: (students: RosterImportStudent[]) => BulkStudentImportResult;
   setPraiseRecords: Dispatch<SetStateAction<PraiseRecord[]>>;
   setAgendaItems: Dispatch<SetStateAction<AgendaItem[]>>;
   setRuleCandidates: Dispatch<SetStateAction<RuleCandidate[]>>;
@@ -353,6 +363,7 @@ export function useHomeroomState() {
     addStudent,
     updateStudent,
     deleteStudent,
+    importStudents,
     setPraiseRecords: setActivePraiseRecords,
     setAgendaItems: setActiveAgendaItems,
     setRuleCandidates: setActiveRuleCandidates,
@@ -573,6 +584,67 @@ export function useHomeroomState() {
     );
 
     return { ok: true };
+  }
+
+  function importStudents(studentsToImport: RosterImportStudent[]): BulkStudentImportResult {
+    if (!canEditActiveClass) {
+      return {
+        addedCount: 0,
+        skippedRows: studentsToImport.map((student) => ({
+          rowNumber: student.rowNumber,
+          reason: "classArchived",
+        })),
+      };
+    }
+
+    const skippedRows: BulkStudentImportResult["skippedRows"] = [];
+    const seenNumbers = new Set(
+      activeClass.students.map((student) => normalizeRosterNumber(student.studentNumber)),
+    );
+    const baseCreatedAtMs = Date.now();
+    const nextStudents: Student[] = [];
+
+    studentsToImport.forEach((student, index) => {
+      const studentNumber = normalizeRosterNumber(student.studentNumber);
+      const name = student.name.trim();
+
+      if (studentNumber.length === 0 || name.length === 0) {
+        skippedRows.push({ rowNumber: student.rowNumber, reason: "invalidInput" });
+        return;
+      }
+
+      if (seenNumbers.has(studentNumber)) {
+        skippedRows.push({ rowNumber: student.rowNumber, reason: "duplicateNumber" });
+        return;
+      }
+
+      seenNumbers.add(studentNumber);
+      nextStudents.push(
+        createStudent(
+          {
+            studentNumber,
+            name,
+            displayName: student.displayName,
+          },
+          baseCreatedAtMs + index,
+        ),
+      );
+    });
+
+    if (nextStudents.length > 0) {
+      setHomeroomClasses((classes) =>
+        classes.map((homeroomClass) =>
+          homeroomClass.classId === activeClass.classId
+            ? { ...homeroomClass, students: [...homeroomClass.students, ...nextStudents] }
+            : homeroomClass,
+        ),
+      );
+    }
+
+    return {
+      addedCount: nextStudents.length,
+      skippedRows,
+    };
   }
 
   function setActiveSeatMap(next: SetStateAction<SeatMap>) {

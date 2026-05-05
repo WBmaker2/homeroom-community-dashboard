@@ -239,6 +239,40 @@ describe("homeroom app workflows", () => {
     expect(screen.getByRole("status").textContent).toContain("이미 사용 중인 학생 번호입니다.");
   });
 
+  it("previews and imports pasted roster rows while skipping invalid rows", async () => {
+    const user = userEvent.setup();
+
+    unlockTeacherSession();
+    renderAt("/teacher");
+
+    await user.click(screen.getByRole("button", { name: "학급 설정" }));
+    await user.type(screen.getAllByLabelText("학급명")[0]!, "일괄 등록 학급");
+    await user.click(screen.getByRole("button", { name: "학급 등록" }));
+
+    await user.type(screen.getAllByLabelText("번호")[0]!, "1");
+    await user.type(screen.getAllByLabelText("이름")[0]!, "기존학생");
+    await user.click(screen.getByRole("button", { name: "학생 등록" }));
+
+    await user.type(
+      screen.getByLabelText("붙여넣기 명단"),
+      ["번호,이름,표시명", "1,중복학생,중복", "2 홍길동 길동", "03,김서연,서연", "4"].join("\n"),
+    );
+    await user.click(screen.getByRole("button", { name: "미리보기" }));
+
+    expect(screen.getByRole("status").textContent).toContain("등록 가능 2명");
+    expect(screen.getByText("등록 가능").nextElementSibling?.textContent).toBe("2명");
+    expect(screen.getByText("확인 필요").nextElementSibling?.textContent).toBe("2건");
+    expect(screen.getByText(/이미 사용 중인 학생 번호입니다/)).toBeInTheDocument();
+    expect(screen.getByText(/학생 이름이 비어 있습니다/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "등록 실행" }));
+
+    expect(screen.getByRole("status").textContent).toContain("2명을 등록했습니다. 2건은 건너뛰었습니다.");
+    expect(screen.getAllByText("3명").length).toBeGreaterThan(0);
+    expect(screen.getByDisplayValue("길동")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("서연")).toBeInTheDocument();
+  });
+
   it("blocks deleting the final remaining class", async () => {
     const user = userEvent.setup();
 
@@ -357,6 +391,8 @@ describe("homeroom app workflows", () => {
 
     await user.click(screen.getByRole("button", { name: "학급 설정" }));
     expect(screen.getByRole("button", { name: "학생 등록" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "미리보기" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "등록 실행" })).toBeDisabled();
     expect(screen.getAllByRole("button", { name: "저장" }).at(-1)!).toBeDisabled();
   });
 

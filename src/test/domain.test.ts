@@ -17,6 +17,7 @@ import {
   detachStudentFromAgendaItems,
   hasRosterNumberConflict,
   normalizeRosterNumber,
+  previewRosterImport,
   removeStudentAssignments,
   removeStudentFromConstraints,
   removeStudentPraiseRecords,
@@ -291,6 +292,31 @@ describe("class settings helpers", () => {
     expect(hasRosterNumberConflict(sampleClass.students, "02번")).toBe(true);
     expect(hasRosterNumberConflict(sampleClass.students, "02번", "s02")).toBe(false);
     expect(hasRosterNumberConflict(sampleClass.students, "31")).toBe(false);
+  });
+
+  it("previews pasted and CSV roster rows with duplicate validation", () => {
+    const preview = previewRosterImport(
+      [
+        "번호,이름,표시명",
+        "31,홍길동,길동",
+        "32 김서연 서연",
+        "02번 박민준",
+        "32 최하늘",
+        "33",
+        '"34","이,나래","나래"',
+      ].join("\n"),
+      sampleClass.students,
+    );
+
+    expect(preview.totalRows).toBe(6);
+    expect(preview.students).toEqual([
+      { rowNumber: 2, studentNumber: "31", name: "홍길동", displayName: "길동" },
+      { rowNumber: 3, studentNumber: "32", name: "김서연", displayName: "서연" },
+      { rowNumber: 7, studentNumber: "34", name: "이,나래", displayName: "나래" },
+    ]);
+    expect(preview.issues.map((issue) => issue.rowNumber)).toEqual([4, 5, 6]);
+    expect(preview.issues[0]?.message).toBe("이미 사용 중인 학생 번호입니다.");
+    expect(preview.issues[2]?.message).toBe("학생 이름이 비어 있습니다.");
   });
 
   it("cleans student-linked class data when a student is deleted", () => {

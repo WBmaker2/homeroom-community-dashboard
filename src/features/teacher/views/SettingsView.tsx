@@ -1,6 +1,19 @@
-import { Archive, Database, Download, Plus, Save, Trash2, Upload } from "lucide-react";
+import {
+  Archive,
+  ClipboardList,
+  Database,
+  Download,
+  Plus,
+  Save,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { normalizeRosterNumber } from "../../../domain/classSettings";
+import {
+  normalizeRosterNumber,
+  previewRosterImport,
+  type RosterImportPreview,
+} from "../../../domain/classSettings";
 import { parseBackupText, type ParseSnapshotResult } from "../../../domain/persistence";
 import type { HomeroomClass, Student } from "../../../domain/types";
 import type { HomeroomActions, HomeroomState } from "../../../state/useHomeroomState";
@@ -28,6 +41,8 @@ export function SettingsView({ state, actions }: SettingsViewProps) {
   const [studentNumber, setStudentNumber] = useState("");
   const [studentName, setStudentName] = useState("");
   const [studentDisplayName, setStudentDisplayName] = useState("");
+  const [bulkRosterText, setBulkRosterText] = useState("");
+  const [bulkRosterPreview, setBulkRosterPreview] = useState<RosterImportPreview | null>(null);
   const [message, setMessage] = useState("");
   const [backupPreview, setBackupPreview] = useState<{
     fileName: string;
@@ -41,6 +56,7 @@ export function SettingsView({ state, actions }: SettingsViewProps) {
     setClassName(state.homeroomClass.name);
     setGradeBand(state.homeroomClass.gradeBand);
     setClassStatus(state.homeroomClass.status);
+    setBulkRosterPreview(null);
   }, [state.homeroomClass]);
 
   function createClass() {
@@ -93,6 +109,35 @@ export function SettingsView({ state, actions }: SettingsViewProps) {
     setStudentName("");
     setStudentDisplayName("");
     setMessage("학생을 등록했습니다.");
+  }
+
+  function previewBulkRoster() {
+    if (bulkRosterText.trim().length === 0) {
+      setBulkRosterPreview(null);
+      setMessage("붙여넣을 학생 명단을 입력해 주세요.");
+      return;
+    }
+
+    const preview = previewRosterImport(bulkRosterText, state.homeroomClass.students);
+
+    setBulkRosterPreview(preview);
+    setMessage(
+      `등록 가능 ${preview.students.length}명, 확인 필요 ${preview.issues.length}건입니다.`,
+    );
+  }
+
+  function importBulkRoster() {
+    if (!bulkRosterPreview || bulkRosterPreview.students.length === 0) {
+      setMessage("등록 가능한 학생이 없습니다.");
+      return;
+    }
+
+    const result = actions.importStudents(bulkRosterPreview.students);
+    const skippedCount = bulkRosterPreview.issues.length + result.skippedRows.length;
+
+    setBulkRosterText("");
+    setBulkRosterPreview(null);
+    setMessage(`${result.addedCount}명을 등록했습니다. ${skippedCount}건은 건너뛰었습니다.`);
   }
 
   function downloadBackup() {
@@ -330,6 +375,98 @@ export function SettingsView({ state, actions }: SettingsViewProps) {
             </button>
           </div>
         </article>
+      </section>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <h2>명부 일괄 등록</h2>
+            <p>번호 이름 표시명 순서로 붙여넣거나 CSV 형식을 사용할 수 있습니다.</p>
+          </div>
+          <ClipboardList size={22} aria-hidden="true" />
+        </div>
+
+        <div className="form-grid">
+          <label>
+            붙여넣기 명단
+            <textarea
+              disabled={isClassArchived}
+              value={bulkRosterText}
+              onChange={(event) => {
+                setBulkRosterText(event.target.value);
+                setBulkRosterPreview(null);
+              }}
+              placeholder={"번호,이름,표시명\n1,홍길동,길동\n2 김서연 서연"}
+              rows={6}
+            />
+          </label>
+          <div className="button-row">
+            <button
+              className="secondary-button"
+              disabled={isClassArchived}
+              type="button"
+              onClick={previewBulkRoster}
+            >
+              미리보기
+            </button>
+            <button
+              className="primary-button"
+              disabled={isClassArchived || !bulkRosterPreview || bulkRosterPreview.students.length === 0}
+              type="button"
+              onClick={importBulkRoster}
+            >
+              등록 실행
+            </button>
+          </div>
+        </div>
+
+        {bulkRosterPreview && (
+          <div className="backup-preview">
+            <div className="storage-metrics compact">
+              <div>
+                <span>검토 행</span>
+                <strong>{bulkRosterPreview.totalRows}개</strong>
+              </div>
+              <div>
+                <span>등록 가능</span>
+                <strong>{bulkRosterPreview.students.length}명</strong>
+              </div>
+              <div>
+                <span>확인 필요</span>
+                <strong>{bulkRosterPreview.issues.length}건</strong>
+              </div>
+            </div>
+
+            {bulkRosterPreview.students.length > 0 && (
+              <div className="activity-stack">
+                {bulkRosterPreview.students.slice(0, 5).map((student) => (
+                  <div className="activity-row" key={`${student.rowNumber}-${student.studentNumber}`}>
+                    <div>
+                      <strong>
+                        {student.studentNumber} {student.name}
+                      </strong>
+                      <span>{student.displayName?.trim() || student.name}</span>
+                    </div>
+                    <small>{student.rowNumber}행</small>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {bulkRosterPreview.issues.length > 0 && (
+              <ul className="plain-list">
+                {bulkRosterPreview.issues.map((issue) => (
+                  <li key={`${issue.rowNumber}-${issue.rawLine}`}>
+                    <strong>{issue.rowNumber}행</strong>
+                    <span>
+                      {issue.message} {issue.rawLine.trim()}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="panel">
