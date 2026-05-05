@@ -22,6 +22,11 @@ import {
   removeStudentFromConstraints,
   removeStudentPraiseRecords,
 } from "../domain/classSettings";
+import {
+  createCloudActivitySnapshot,
+  getCloudSubmissionDocumentId,
+  mergeParticipationSubmissions,
+} from "../domain/cloudParticipation";
 import { computeDashboardSignals } from "../domain/dashboardSignals";
 import {
   canAcceptSubmission,
@@ -136,6 +141,64 @@ describe("teacher scoped invite codes", () => {
 
   it("does not keep the old shared sample participation code", () => {
     expect(sampleActivities[0]?.code).not.toBe("WARM-62");
+  });
+});
+
+describe("cloud participation helpers", () => {
+  it("publishes only the student fields needed for participation", () => {
+    const snapshot = createCloudActivitySnapshot({
+      teacherId: "T-K7Q2M9P4",
+      homeroomClass: sampleClass,
+      activity: sampleActivities[0]!,
+      ruleCandidates: sampleRuleCandidates,
+      publishedAt: "2026-05-05T10:00:00.000Z",
+    });
+
+    expect(snapshot.homeroomClass.students[0]).toEqual({
+      studentId: sampleClass.students[0]?.studentId,
+      studentNumber: sampleClass.students[0]?.studentNumber,
+      displayName: sampleClass.students[0]?.displayName,
+    });
+    expect("name" in snapshot.homeroomClass.students[0]!).toBe(false);
+    expect("supportNotes" in snapshot.homeroomClass.students[0]!).toBe(false);
+    expect(snapshot.ruleCandidate?.title).toBe(sampleRuleCandidates[0]?.title);
+  });
+
+  it("uses participation key for one-time cloud submissions and submission id for repeated submissions", () => {
+    const submission = {
+      ...sampleSubmissions[0]!,
+      submissionId: "submission-cloud-test",
+    };
+
+    expect(getCloudSubmissionDocumentId(sampleActivities[0]!, submission)).toBe(
+      `${submission.classId}:${submission.activityId}:${submission.studentId}`,
+    );
+    expect(
+      getCloudSubmissionDocumentId(
+        { ...sampleActivities[0]!, allowMultipleSubmissions: true },
+        submission,
+      ),
+    ).toBe("submission-cloud-test");
+  });
+
+  it("merges only new cloud submissions unless the activity allows repeated submissions", () => {
+    const existing = [sampleSubmissions[0]!];
+    const sameStudentNewId = {
+      ...sampleSubmissions[0]!,
+      submissionId: "submission-cloud-repeat",
+    };
+    const oneTimeMerge = mergeParticipationSubmissions(existing, [sameStudentNewId]);
+
+    expect(oneTimeMerge.added).toHaveLength(0);
+
+    const repeatedMerge = mergeParticipationSubmissions(
+      existing,
+      [sameStudentNewId],
+      () => true,
+    );
+
+    expect(repeatedMerge.added).toEqual([sameStudentNewId]);
+    expect(repeatedMerge.submissions).toHaveLength(2);
   });
 });
 

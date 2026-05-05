@@ -24,6 +24,7 @@ import {
   type NewStudentInput,
   type RosterImportStudent,
 } from "../domain/classSettings";
+import { mergeParticipationSubmissions } from "../domain/cloudParticipation";
 import { computeDashboardSignals } from "../domain/dashboardSignals";
 import {
   STORAGE_KEY,
@@ -98,6 +99,11 @@ export type BulkStudentImportResult = {
   }[];
 };
 
+export type ParticipationSubmissionImportResult = {
+  addedCount: number;
+  skippedCount: number;
+};
+
 export type HomeroomActions = {
   addHomeroomClass: (input: NewClassInput) => void;
   updateHomeroomClass: (patch: Partial<Pick<HomeroomClass, "name" | "gradeBand" | "status">>) => void;
@@ -117,6 +123,9 @@ export type HomeroomActions = {
   setClassroomRules: Dispatch<SetStateAction<ClassroomRule[]>>;
   setActivities: Dispatch<SetStateAction<ParticipationActivity[]>>;
   setSubmissions: Dispatch<SetStateAction<ParticipationSubmission[]>>;
+  importParticipationSubmissions: (
+    submissions: ParticipationSubmission[],
+  ) => ParticipationSubmissionImportResult;
   updateActivityStatus: (activityId: string, status: ParticipationActivity["status"]) => void;
   deleteSubmission: (submissionId: string) => void;
   setSeatMap: Dispatch<SetStateAction<SeatMap>>;
@@ -370,6 +379,7 @@ export function useHomeroomState() {
     setClassroomRules: setActiveClassroomRules,
     setActivities: setActiveActivities,
     setSubmissions: setActiveSubmissions,
+    importParticipationSubmissions,
     updateActivityStatus,
     deleteSubmission,
     setSeatMap: setActiveSeatMap,
@@ -745,6 +755,171 @@ export function useHomeroomState() {
         ),
       );
     }
+  }
+
+  function importParticipationSubmissions(
+    incomingSubmissions: ParticipationSubmission[],
+  ): ParticipationSubmissionImportResult {
+    if (!canEditActiveClass) {
+      return { addedCount: 0, skippedCount: incomingSubmissions.length };
+    }
+
+    const classSubmissions = incomingSubmissions.filter(
+      (submission) => submission.classId === activeClass.classId,
+    );
+    const merge = mergeParticipationSubmissions(
+      activeSubmissions,
+      classSubmissions,
+      (submission) =>
+        activeActivities.find((activity) => activity.activityId === submission.activityId)
+          ?.allowMultipleSubmissions ?? false,
+    );
+
+    if (merge.added.length === 0) {
+      return {
+        addedCount: 0,
+        skippedCount: incomingSubmissions.length,
+      };
+    }
+
+    setActiveSubmissions(merge.submissions);
+    importAgendaSubmissions(merge.added);
+    importPraiseSubmissions(merge.added);
+    importRuleVoteSubmissions(merge.added);
+
+    return {
+      addedCount: merge.added.length,
+      skippedCount: incomingSubmissions.length - merge.added.length,
+    };
+  }
+
+  function importAgendaSubmissions(importedSubmissions: ParticipationSubmission[]) {
+    const nextAgendaItems = importedSubmissions.flatMap((submission): AgendaItem[] => {
+      const matchedActivity = activeActivities.find(
+        (activity) => activity.activityId === submission.activityId,
+      );
+      const content = submission.content?.trim();
+
+      if (matchedActivity?.type !== "agendaSubmission" || !content) {
+        return [];
+      }
+
+      return [
+        {
+          agendaId: `agenda-${submission.submissionId}`,
+          classId: submission.classId,
+          submittedByStudentId: submission.studentId,
+          title: content.slice(0, 24),
+          originalText: content,
+          status: "PENDING_REVIEW",
+          submittedAt: submission.submittedAt,
+          isPublic: false,
+        },
+      ];
+    });
+
+    if (nextAgendaItems.length === 0) {
+      return;
+    }
+
+    setActiveAgendaItems((items) => {
+      const existingIds = new Set(items.map((item) => item.agendaId));
+
+      return [
+        ...nextAgendaItems.filter((item) => !existingIds.has(item.agendaId)),
+        ...items,
+      ];
+    });
+  }
+
+  function importPraiseSubmissions(importedSubmissions: ParticipationSubmission[]) {
+    const nextPraiseRecords = importedSubmissions.flatMap((submission): PraiseRecord[] => {
+      const matchedActivity = activeActivities.find(
+        (activity) => activity.activityId === submission.activityId,
+      );
+      const content = submission.content?.trim();
+
+      if (matchedActivity?.type !== "praiseReport" || !content || !submission.targetStudentId) {
+        return [];
+      }
+
+      return [
+        {
+          praiseId: `praise-${submission.submissionId}`,
+          classId: submission.classId,
+          studentId: submission.targetStudentId,
+          submittedByStudentId: submission.studentId,
+          date: submission.submittedAt,
+          tags: ["학생 제보"],
+          memo: content,
+          visibility: "publicAfterReview",
+          reviewStatus: "pending",
+        },
+      ];
+    });
+
+    if (nextPraiseRecords.length === 0) {
+      return;
+    }
+
+    setActivePraiseRecords((records) => {
+      const existingIds = new Set(records.map((record) => record.praiseId));
+
+      return [
+        ...nextPraiseRecords.filter((record) => !existingIds.has(record.praiseId)),
+        ...records,
+      ];
+    });
+  }
+
+  function importRuleVoteSubmissions(importedSubmissions: ParticipationSubmission[]) {
+    const voteDeltas = new Map<string, { agree: number; needsRevision: number }>();
+
+    for (const submission of importedSubmissions) {
+      const matchedActivity = activeActivities.find(
+        (activity) => activity.activityId === submission.activityId,
+      );
+
+      if (
+        matchedActivity?.type !== "ruleVote" ||
+        !matchedActivity.targetId ||
+        (submission.choice !== "agree" && submission.choice !== "needsRevision")
+      ) {
+        continue;
+      }
+
+      const current = voteDeltas.get(matchedActivity.targetId) ?? {
+        agree: 0,
+        needsRevision: 0,
+      };
+
+      voteDeltas.set(matchedActivity.targetId, {
+        ...current,
+        [submission.choice]: current[submission.choice] + 1,
+      });
+    }
+
+    if (voteDeltas.size === 0) {
+      return;
+    }
+
+    setActiveRuleCandidates((candidates) =>
+      candidates.map((candidate) => {
+        const delta = voteDeltas.get(candidate.ruleCandidateId);
+
+        if (!delta) {
+          return candidate;
+        }
+
+        return {
+          ...candidate,
+          votes: {
+            agree: candidate.votes.agree + delta.agree,
+            needsRevision: candidate.votes.needsRevision + delta.needsRevision,
+          },
+        };
+      }),
+    );
   }
 
   function downloadBackup() {

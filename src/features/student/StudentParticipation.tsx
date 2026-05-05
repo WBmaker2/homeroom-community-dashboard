@@ -1,5 +1,6 @@
 import { CheckCircle2, Send } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import type { CloudActivitySnapshot } from "../../domain/cloudParticipation";
 import {
   canAcceptSubmission,
   findStudentByNumber,
@@ -12,8 +13,14 @@ import type {
   ParticipationActivity,
   ParticipationSubmission,
   PraiseRecord,
+  Student,
 } from "../../domain/types";
 import type { HomeroomActions, HomeroomState } from "../../state/useHomeroomState";
+import {
+  fetchCloudActivityByCode,
+  isCloudParticipationEnabled,
+  submitCloudParticipation,
+} from "../../services/cloudParticipationClient";
 
 type StudentParticipationProps = {
   initialCode?: string;
@@ -33,14 +40,33 @@ export function StudentParticipation({
   const [targetStudentId, setTargetStudentId] = useState(state.homeroomClass.students[0]?.studentId ?? "");
   const [voteChoice, setVoteChoice] = useState<"agree" | "needsRevision">("agree");
   const [message, setMessage] = useState("");
-  const activity = useMemo(
+  const [cloudSnapshot, setCloudSnapshot] = useState<CloudActivitySnapshot | null>(null);
+  const [cloudSubmissions, setCloudSubmissions] = useState<ParticipationSubmission[]>([]);
+  const [isCloudLookupPending, setIsCloudLookupPending] = useState(false);
+  const localActivity = useMemo(
     () =>
       state.activities.find(
         (candidate) => candidate.code.toUpperCase() === codeInput.trim().toUpperCase(),
       ) ?? null,
     [codeInput, state.activities],
   );
-  const isClassArchived = state.homeroomClass.status === "archived";
+  const activity = localActivity ?? cloudSnapshot?.activity ?? null;
+  const isCloudActivity = localActivity === null && cloudSnapshot !== null && activity !== null;
+  const cloudStudents = useMemo<Student[]>(
+    () =>
+      cloudSnapshot?.homeroomClass.students.map((student) => ({
+        ...student,
+        name: student.displayName,
+      })) ?? [],
+    [cloudSnapshot],
+  );
+  const effectiveStudents = isCloudActivity ? cloudStudents : state.homeroomClass.students;
+  const effectiveSubmissions = isCloudActivity ? cloudSubmissions : state.submissions;
+  const effectiveActivities = isCloudActivity && activity ? [activity] : state.activities;
+  const classStatus = isCloudActivity
+    ? cloudSnapshot?.homeroomClass.status ?? state.homeroomClass.status
+    : state.homeroomClass.status;
+  const isClassArchived = classStatus === "archived";
   const nowIso = getCurrentHomeroomIso();
   const availability = useMemo(
     () =>
@@ -55,14 +81,66 @@ export function StudentParticipation({
   const isSubmitDisabled = isClassArchived || !availability.isOpen;
   const isActivityUnavailable = isClassArchived || !availability.isOpen;
   const targetCandidate = activity?.targetId
-    ? state.ruleCandidates.find((candidate) => candidate.ruleCandidateId === activity.targetId)
+    ? isCloudActivity
+      ? cloudSnapshot?.ruleCandidate
+      : state.ruleCandidates.find((candidate) => candidate.ruleCandidateId === activity.targetId)
     : null;
 
   useEffect(() => {
     setCodeInput(initialCode ?? "");
   }, [initialCode]);
 
-  function submit() {
+  useEffect(() => {
+    const cleanCode = codeInput.trim().toUpperCase();
+
+    if (localActivity || cleanCode.length < 4 || !isCloudParticipationEnabled()) {
+      setCloudSnapshot(null);
+      setCloudSubmissions([]);
+      setIsCloudLookupPending(false);
+      return;
+    }
+
+    let isCancelled = false;
+    setCloudSnapshot(null);
+    setCloudSubmissions([]);
+    const timeoutId = window.setTimeout(() => {
+      setIsCloudLookupPending(true);
+      fetchCloudActivityByCode(cleanCode)
+        .then((snapshot) => {
+          if (isCancelled) {
+            return;
+          }
+
+          setCloudSnapshot(snapshot);
+          setCloudSubmissions([]);
+        })
+        .catch(() => {
+          if (!isCancelled) {
+            setCloudSnapshot(null);
+          }
+        })
+        .finally(() => {
+          if (!isCancelled) {
+            setIsCloudLookupPending(false);
+          }
+        });
+    }, 400);
+
+    return () => {
+      isCancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [codeInput, localActivity]);
+
+  useEffect(() => {
+    if (effectiveStudents.some((student) => student.studentId === targetStudentId)) {
+      return;
+    }
+
+    setTargetStudentId(effectiveStudents[0]?.studentId ?? "");
+  }, [effectiveStudents, targetStudentId]);
+
+  async function submit() {
     if (!activity) {
       setMessage("참여 코드를 확인해 주세요.");
       return;
@@ -72,10 +150,10 @@ export function StudentParticipation({
 
     const gate = canAcceptSubmission({
       activity,
-      classStatus: state.homeroomClass.status,
-      students: state.homeroomClass.students,
+      classStatus,
+      students: effectiveStudents,
       studentNumberInput: studentNumber,
-      previousSubmissions: state.submissions,
+      previousSubmissions: effectiveSubmissions,
       nowIso,
     });
 
@@ -100,6 +178,19 @@ export function StudentParticipation({
       content: content.trim() || undefined,
       targetStudentId: activity.type === "praiseReport" ? targetStudentId : undefined,
     };
+
+    if (isCloudActivity) {
+      try {
+        await submitCloudParticipation({ activity, submission: nextSubmission });
+        setCloudSubmissions((submissions) => [nextSubmission, ...submissions]);
+        setContent("");
+        setMessage("제출되었습니다.");
+      } catch {
+        setMessage("제출을 저장하지 못했습니다. 선생님께 다시 확인해 주세요.");
+      }
+
+      return;
+    }
 
     if (activity.type === "ruleVote") {
       submitVote(activity, voteChoice);
@@ -282,7 +373,7 @@ export function StudentParticipation({
                     value={targetStudentId}
                     onChange={(event) => setTargetStudentId(event.target.value)}
                   >
-                    {state.homeroomClass.students.map((student) => (
+                    {effectiveStudents.map((student) => (
                       <option key={student.studentId} value={student.studentId}>
                         {student.displayName}
                       </option>
@@ -315,11 +406,16 @@ export function StudentParticipation({
               className="primary-button wide"
               disabled={isSubmitDisabled}
               type="button"
-              onClick={submit}
+              onClick={() => void submit()}
             >
               <Send size={16} aria-hidden="true" />
               제출
             </button>
+          </div>
+        ) : isCloudLookupPending ? (
+          <div className="participation-panel">
+            <h1>참여 활동 확인 중</h1>
+            <p>입력한 코드로 열린 활동을 찾고 있습니다.</p>
           </div>
         ) : (
           <div className="participation-panel">
@@ -339,16 +435,16 @@ export function StudentParticipation({
       <aside className="student-safe-panel">
         <h2>내 참여 기록</h2>
         <div className="activity-stack">
-          {state.submissions
+          {effectiveSubmissions
             .filter((submission) => {
-              const student = findStudentByNumber(state.homeroomClass.students, studentNumber);
+              const student = findStudentByNumber(effectiveStudents, studentNumber);
 
               return student?.studentId === submission.studentId;
             })
             .map((submission) => (
               <div className="activity-row" key={submission.submissionId}>
                 <div>
-                  <strong>{getActivityTitle(state.activities, submission.activityId)}</strong>
+                  <strong>{getActivityTitle(effectiveActivities, submission.activityId)}</strong>
                   <span>{submission.submittedAt.slice(0, 10)}</span>
                 </div>
                 <small>{submission.choice ? choiceLabel(submission.choice) : "제출"}</small>

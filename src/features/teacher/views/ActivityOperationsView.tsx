@@ -1,11 +1,18 @@
-import { ActivitySquare, Copy, Pause, Play, Trash2 } from "lucide-react";
+import { ActivitySquare, Cloud, Copy, Pause, Play, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { createCloudActivitySnapshot } from "../../../domain/cloudParticipation";
 import { createAbsoluteAppUrl } from "../../../domain/appRoutes";
 import {
   getActivityAvailability,
   getActivityAvailabilityLabel,
 } from "../../../domain/participation";
 import type { HomeroomActions, HomeroomState } from "../../../state/useHomeroomState";
+import {
+  deleteCloudSubmission,
+  fetchCloudSubmissions,
+  getCloudParticipationConfig,
+  publishCloudActivity,
+} from "../../../services/cloudParticipationClient";
 
 type ActivityOperationsViewProps = {
   state: HomeroomState;
@@ -28,6 +35,8 @@ export function ActivityOperationsView({
   const isClassArchived = state.homeroomClass.status === "archived";
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(state.activities[0]?.activityId ?? null);
   const [operationMessage, setOperationMessage] = useState("");
+  const [isCloudBusy, setIsCloudBusy] = useState(false);
+  const cloudConfig = getCloudParticipationConfig();
 
   const selectedActivity = useMemo(
     () => state.activities.find((activity) => activity.activityId === selectedActivityId) ?? null,
@@ -68,6 +77,74 @@ export function ActivityOperationsView({
     }
   }
 
+  async function publishSelectedActivity() {
+    if (!selectedActivity || !cloudConfig.enabled) {
+      return;
+    }
+
+    setIsCloudBusy(true);
+
+    try {
+      await publishCloudActivity(
+        createCloudActivitySnapshot({
+          teacherId: state.teacherId,
+          homeroomClass: state.homeroomClass,
+          activity: selectedActivity,
+          ruleCandidates: state.ruleCandidates,
+          publishedAt: new Date().toISOString(),
+        }),
+      );
+      setOperationMessage(`${selectedActivity.code} 활동을 클라우드에 게시했습니다.`);
+    } catch {
+      setOperationMessage("클라우드 활동 게시에 실패했습니다. Firebase 설정과 보안 규칙을 확인해 주세요.");
+    } finally {
+      setIsCloudBusy(false);
+    }
+  }
+
+  async function syncSelectedSubmissions() {
+    if (!selectedActivity || !cloudConfig.enabled) {
+      return;
+    }
+
+    setIsCloudBusy(true);
+
+    try {
+      const cloudSubmissions = await fetchCloudSubmissions(selectedActivity);
+      const result = actions.importParticipationSubmissions(cloudSubmissions);
+
+      setOperationMessage(
+        `클라우드 제출 ${result.addedCount}건을 불러왔습니다. ${result.skippedCount}건은 이미 반영되어 건너뛰었습니다.`,
+      );
+    } catch {
+      setOperationMessage("클라우드 제출을 불러오지 못했습니다. Firebase 설정과 네트워크를 확인해 주세요.");
+    } finally {
+      setIsCloudBusy(false);
+    }
+  }
+
+  async function deleteSubmission(submissionId: string) {
+    const targetSubmission = selectedSubmissions.find(
+      (submission) => submission.submissionId === submissionId,
+    );
+
+    if (!targetSubmission || !selectedActivity) {
+      return;
+    }
+
+    if (cloudConfig.enabled) {
+      try {
+        await deleteCloudSubmission({ activity: selectedActivity, submission: targetSubmission });
+      } catch {
+        setOperationMessage("클라우드 제출 삭제에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+        return;
+      }
+    }
+
+    actions.deleteSubmission(submissionId);
+    setOperationMessage("선택한 제출을 삭제했습니다.");
+  }
+
   return (
     <div className="view-stack">
       {isClassArchived && (
@@ -81,6 +158,43 @@ export function ActivityOperationsView({
           {operationMessage}
         </p>
       )}
+
+      <section className="panel cloud-sync-panel">
+        <div className="panel-heading compact-heading">
+          <div>
+            <h2>클라우드 참여 동기화</h2>
+            <p>
+              {cloudConfig.enabled
+                ? "선택 활동을 게시하고 학생 기기에서 들어온 제출을 불러옵니다."
+                : cloudConfig.reason}
+            </p>
+          </div>
+          <Cloud size={22} aria-hidden="true" />
+        </div>
+        <div className="button-row">
+          <button
+            className="secondary-button"
+            disabled={!cloudConfig.enabled || isClassArchived || !selectedActivity || isCloudBusy}
+            type="button"
+            onClick={publishSelectedActivity}
+          >
+            <Cloud size={16} aria-hidden="true" />
+            선택 활동 게시
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!cloudConfig.enabled || isClassArchived || !selectedActivity || isCloudBusy}
+            type="button"
+            onClick={syncSelectedSubmissions}
+          >
+            <RefreshCw size={16} aria-hidden="true" />
+            제출 불러오기
+          </button>
+          {selectedActivity && (
+            <span className="status-chip">선택: {selectedActivity.code}</span>
+          )}
+        </div>
+      </section>
 
       <section className="two-column activity-operations-grid">
         <article className="panel">
@@ -209,10 +323,7 @@ export function ActivityOperationsView({
                         className="icon-button danger"
                         type="button"
                         disabled={isClassArchived}
-                        onClick={() => {
-                          actions.deleteSubmission(submission.submissionId);
-                          setOperationMessage("선택한 제출을 삭제했습니다.");
-                        }}
+                        onClick={() => void deleteSubmission(submission.submissionId)}
                         aria-label="제출 삭제"
                       >
                         <Trash2 size={16} aria-hidden="true" />
