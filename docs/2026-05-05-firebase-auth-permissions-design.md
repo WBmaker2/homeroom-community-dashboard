@@ -159,7 +159,7 @@ service cloud.firestore {
 
       match /submissions/{submissionId} {
         allow create: if isSubmissionCreate();
-        allow read, update, delete: if isParentActivityOwner(code);
+        allow read, delete: if isParentActivityOwner(code);
         allow update: if false;
       }
     }
