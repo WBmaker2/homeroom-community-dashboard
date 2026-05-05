@@ -16,16 +16,16 @@
 
 ## 목표
 
-1. 교사 email/password 로그인 적용  
+1. 교사 email/password 로그인 적용
    Firebase Auth를 통해 담임 교사 계정 기반으로 로그인/로그아웃 동작을 지원합니다.
 
-2. 활동 게시 소유권 강화  
+2. 활동 게시 소유권 강화
    교사가 클라우드에 게시한 활동 문서는 게시자(`teacherUid`)만 수정/삭제할 수 있도록 제한합니다.
 
-3. 교사 전용 목록/삭제 권한 분리  
+3. 교사 전용 목록/삭제 권한 분리
    활동 운영 화면에서의 클라우드 제출 목록 조회 및 제출 삭제는 교사 인증이 있는 요청에서만 허용합니다.
 
-4. 학생은 비로그인 흐름 유지  
+4. 학생은 비로그인 흐름 유지
    학생 참여(`submit`, 코드 조회)는 기존처럼 인증 없이 진행합니다.
 
 ## 비목표
@@ -57,7 +57,7 @@
 - `VITE_FIREBASE_API_KEY`
 - `VITE_FIREBASE_PARTICIPATION_COLLECTION` (기본값 `homeroomPublicActivities`)
 
-**주의:** Web API Key는 절대 저장소에 커밋하지 않습니다.  
+**주의:** Web API Key는 절대 저장소에 커밋하지 않습니다.
 GitHub Variables 또는 배포 환경 변수로만 주입합니다.
 
 ## 데이터 모델 변경
@@ -70,7 +70,7 @@ GitHub Variables 또는 배포 환경 변수로만 주입합니다.
 
 `teacherEmail`은 공개 활동 문서에 저장하지 않습니다. 교사 이메일은 **로그인 세션(로컬 세션 객체)** 또는 교사 전용 내부 기록에만 보관합니다.
 
-기존 필드(`teacherId`, `code`, `classId`, `activityId`, `payload` 등)는 기존 방식 유지.  
+기존 필드(`teacherId`, `code`, `classId`, `activityId`, `payload` 등)는 기존 방식 유지.
 `payload`는 기존 JSON 구조를 유지해 기존 파서 범위를 최소화합니다.
 
 ### 문서 구조 (요약)
@@ -196,9 +196,9 @@ service cloud.firestore {
 
 #### 1) Auth REST 서비스 (신규)
 
-- 엔드포인트  
+- 엔드포인트
   `POST https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=VITE_FIREBASE_API_KEY`
-- 요청 본문  
+- 요청 본문
   `{ email, password, returnSecureToken: true }`
 - 응답에서 저장할 항목
   - `localId` → `teacherUid`
