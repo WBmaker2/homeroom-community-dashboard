@@ -133,6 +133,8 @@ function createOperationsSnapshot(params: {
 
 describe("homeroom app workflows", () => {
   beforeEach(() => {
+    ensureMutableStorage("localStorage");
+    ensureMutableStorage("sessionStorage");
     window.localStorage.clear();
     window.sessionStorage.clear();
     window.history.pushState(null, "", "/");
@@ -442,12 +444,18 @@ describe("homeroom app workflows", () => {
     expect(screen.queryByText("만료된 활동")).not.toBeInTheDocument();
     expect(screen.queryByText("시작 전 활동")).not.toBeInTheDocument();
 
+    await user.click(screen.getByRole("button", { name: "회의 안건" }));
+    expect(screen.getByText("마감됨")).toBeInTheDocument();
+    expect(screen.getByText("시작 전")).toBeInTheDocument();
+
     await user.click(screen.getByRole("button", { name: "활동 운영" }));
     const expiredRow = getActivityRowButton("EXPIRED-0001");
     const upcomingRow = getActivityRowButton("UPCOMING-0001");
 
     expect(within(expiredRow.closest("article")!).getByText("상태: 마감됨")).toBeInTheDocument();
     expect(within(upcomingRow.closest("article")!).getByText("상태: 시작 전")).toBeInTheDocument();
+    expect(getActivityActionButton("EXPIRED-0001", "EXPIRED-0001 종료")).toBeEnabled();
+    expect(getActivityActionButton("UPCOMING-0001", "UPCOMING-0001 종료")).toBeEnabled();
 
     nowSpy.mockRestore();
   });
@@ -660,7 +668,7 @@ describe("homeroom app workflows", () => {
                 submissionId: "submission-anon-01",
                 classId,
                 activityId,
-                studentId: "s01",
+                studentId: "student-imported-01",
                 submittedAt: "2026-05-03T10:00:00+09:00",
                 content: "익명으로 남깁니다",
               },
@@ -677,7 +685,7 @@ describe("homeroom app workflows", () => {
     await user.click(getActivityRowButton(activityCode));
 
     expect(screen.getByText("익명 제출")).toBeInTheDocument();
-    expect(screen.queryByText("민준")).not.toBeInTheDocument();
+    expect(screen.queryByText("1 길동")).not.toBeInTheDocument();
   });
 
   it("blocks student submissions for archived classes", () => {
@@ -833,6 +841,41 @@ function navigateTo(path: string) {
   act(() => {
     window.history.pushState(null, "", path);
     window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+}
+
+function ensureMutableStorage(storageKey: "localStorage" | "sessionStorage") {
+  const storage = window[storageKey];
+
+  if (typeof storage?.clear === "function") {
+    return;
+  }
+
+  const values = new Map<string, string>();
+  const replacement = {
+    get length() {
+      return values.size;
+    },
+    clear() {
+      values.clear();
+    },
+    getItem(key: string) {
+      return values.get(String(key)) ?? null;
+    },
+    key(index: number) {
+      return Array.from(values.keys())[index] ?? null;
+    },
+    removeItem(key: string) {
+      values.delete(String(key));
+    },
+    setItem(key: string, value: string) {
+      values.set(String(key), String(value));
+    },
+  } satisfies Storage;
+
+  Object.defineProperty(window, storageKey, {
+    configurable: true,
+    value: replacement,
   });
 }
 

@@ -103,7 +103,6 @@ export function ActivityOperationsView({
                 activity,
                 nowIso: state.todayIso,
               });
-              const isAvailable = availability.isOpen;
               const isSelected = activity.activityId === selectedActivityId;
 
               return (
@@ -140,7 +139,7 @@ export function ActivityOperationsView({
                       className="icon-button"
                       aria-label={`${activity.code} 종료`}
                       type="button"
-                      disabled={isClassArchived || !isAvailable}
+                      disabled={isClassArchived || activity.status === "closed"}
                       onClick={() => {
                         actions.updateActivityStatus(activity.activityId, "closed");
                         setOperationMessage(`${activity.code} 활동을 종료했습니다.`);

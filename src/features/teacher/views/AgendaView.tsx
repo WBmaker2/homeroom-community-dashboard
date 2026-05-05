@@ -9,6 +9,10 @@ import {
   createParticipationCode,
   getExistingActivityCodes,
 } from "../../../domain/inviteCodes";
+import {
+  getActivityAvailability,
+  getActivityAvailabilityLabel,
+} from "../../../domain/participation";
 import type { AgendaItem, AgendaStatus, ParticipationActivity } from "../../../domain/types";
 import type { HomeroomActions, HomeroomState } from "../../../state/useHomeroomState";
 
@@ -149,15 +153,22 @@ export function AgendaView({ state, actions, getStudentName }: AgendaViewProps) 
           <div className="activity-stack">
             {state.activities
               .filter((activity) => activity.type === "agendaSubmission")
-              .map((activity) => (
-                <div className="activity-row" key={activity.activityId}>
-                  <div>
-                    <strong>{activity.title}</strong>
-                    <span>{activity.code}</span>
+              .map((activity) => {
+                const availability = getActivityAvailability({
+                  activity,
+                  nowIso: state.todayIso,
+                });
+
+                return (
+                  <div className="activity-row" key={activity.activityId}>
+                    <div>
+                      <strong>{activity.title}</strong>
+                      <span>{activity.code}</span>
+                    </div>
+                    <small>{getActivityAvailabilityLabel(availability)}</small>
                   </div>
-                  <small>{activity.status === "open" ? "열림" : "닫힘"}</small>
-                </div>
-              ))}
+                );
+              })}
           </div>
         </article>
       </section>
