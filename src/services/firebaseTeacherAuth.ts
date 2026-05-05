@@ -126,7 +126,6 @@ export async function refreshTeacherSession(session: TeacherSession): Promise<Te
   const url = buildApiUrl(SECURE_TOKEN_BASE_URL, config.apiKey);
 
   let response: Response;
-  let payload: RefreshResponse;
 
   try {
     response = await fetch(url, {
@@ -147,13 +146,18 @@ export async function refreshTeacherSession(session: TeacherSession): Promise<Te
     throw new TeacherSessionRefreshError("terminal");
   }
 
+  let rawPayload: unknown;
   try {
-    payload = (await response.json()) as RefreshResponse;
+    rawPayload = await response.json();
   } catch {
     throw new TeacherSessionRefreshError("transient");
   }
 
-  const nextSession = mapRefreshSession(payload, session.email);
+  if (!isRefreshPayload(rawPayload)) {
+    throw new TeacherSessionRefreshError("terminal");
+  }
+
+  const nextSession = mapRefreshSession(rawPayload, session.email);
 
   if (!nextSession) {
     throw new TeacherSessionRefreshError("terminal");
@@ -309,6 +313,10 @@ function isTeacherSession(value: unknown): value is TeacherSession {
     typeof value.expiresAt === "number" &&
     Number.isFinite(value.expiresAt)
   );
+}
+
+function isRefreshPayload(value: unknown): value is RefreshResponse {
+  return isObject(value);
 }
 
 function parsePositiveNumber(value: unknown): number | null {

@@ -315,6 +315,19 @@ describe("firebase teacher auth service", () => {
     ).rejects.toThrow(TEACHER_SESSION_REFRESH_ERROR);
   });
 
+  it("throws stable terminal refresh error when response payload is null", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(new Response(JSON.stringify(null), { status: 200 }));
+    await expect(
+      refreshTeacherSession({
+        teacherUid: "teacher-uid",
+        email: "teacher@example.com",
+        idToken: "id-token",
+        refreshToken: "refresh-token",
+        expiresAt: Date.now() - 1000,
+      }),
+    ).rejects.toThrow(TEACHER_SESSION_REFRESH_ERROR);
+  });
+
   it("clears session on explicit sign-out", () => {
     const storage = createMemoryStorage();
     storage.setItem(TEACHER_SESSION_STORAGE_KEY, JSON.stringify({
