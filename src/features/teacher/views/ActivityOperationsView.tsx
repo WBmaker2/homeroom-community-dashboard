@@ -475,6 +475,7 @@ export function ActivityOperationsView({
                 const submitter =
                   state.homeroomClass.students.find((student) => student.studentId === submission.studentId) ??
                   null;
+                const isDeleteDisabled = isClassArchived || (cloudConfig.enabled && (!teacherSession || isCloudBusy));
 
                 return (
                   <article className="activity-row" key={submission.submissionId}>
@@ -491,7 +492,7 @@ export function ActivityOperationsView({
                       <button
                         className="icon-button danger"
                         type="button"
-                        disabled={isClassArchived}
+                        disabled={isDeleteDisabled}
                         onClick={() => void deleteSubmission(submission.submissionId)}
                         aria-label="제출 삭제"
                       >

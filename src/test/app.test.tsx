@@ -1015,6 +1015,49 @@ describe("homeroom app workflows", () => {
     expect(screen.getByRole("button", { name: "선택 활동 게시" })).toBeDisabled();
   });
 
+  it("keeps cloud submission delete disabled until teacher login is available", async () => {
+    const user = userEvent.setup();
+
+    vi.stubEnv("VITE_FIREBASE_PROJECT_ID", "homeroom-test-project");
+    vi.stubEnv("VITE_FIREBASE_API_KEY", "api-key-123");
+    vi.spyOn(globalThis, "fetch");
+
+    unlockTeacherSession();
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      serializeSnapshot(
+        createSnapshotPayload({
+          snapshot: createOperationsSnapshot({
+            code: "CLOUD-DELETE-LOCK-0001",
+            type: "agendaSubmission",
+            isAnonymous: false,
+            allowMultipleSubmissions: true,
+            opensAt: "2026-05-03T09:00:00+09:00",
+            closesAt: "2026-05-03T18:00:00+09:00",
+            submissions: [
+              {
+                submissionId: "submission-cloud-delete-lock",
+                classId: "class-imported",
+                activityId: "activity-CLOUD-DELETE-LOCK-0001",
+                studentId: "student-imported-01",
+                submittedAt: "2026-05-03T10:00:00+09:00",
+                content: "클라우드 삭제 잠금 테스트",
+              },
+            ],
+          }),
+          savedAt: "2026-05-03T09:00:00.000Z",
+        }),
+      ),
+    );
+
+    renderAt("/teacher");
+    await user.click(screen.getByRole("button", { name: "활동 운영" }));
+    await user.click(getActivityRowButton("CLOUD-DELETE-LOCK-0001"));
+
+    expect(screen.getByRole("button", { name: "제출 삭제" })).toBeDisabled();
+    expect(screen.getByText("클라우드 삭제 잠금 테스트")).toBeInTheDocument();
+  });
+
   it("keeps local submission deletion working when cloud config is disabled", async () => {
     const user = userEvent.setup();
 
