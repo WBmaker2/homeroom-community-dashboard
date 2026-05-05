@@ -75,7 +75,7 @@ export function isCloudParticipationEnabled(): boolean {
 
 export async function publishCloudActivity(
   snapshot: CloudActivitySnapshot,
-  idToken?: string,
+  idToken: string,
 ): Promise<void> {
   const config = requireCloudConfig();
   const token = requireTeacherAuthToken(idToken, CLOUD_ACTIVITY_AUTH_REQUIRED_ERROR);
@@ -160,16 +160,12 @@ export async function submitCloudParticipation(params: {
 export async function fetchCloudSubmissions(
   params: {
     activity: ParticipationActivity;
-    idToken?: string;
-  } | ParticipationActivity,
+    idToken: string;
+  },
 ): Promise<ParticipationSubmission[]> {
   const config = requireCloudConfig();
-  const activity = "activity" in params ? params.activity : params;
-  const idToken = requireTeacherAuthToken(
-    "activity" in params ? params.idToken : undefined,
-    CLOUD_SUBMISSION_AUTH_REQUIRED_ERROR,
-  );
-  const url = buildDocumentUrl(config, [config.collectionRoot, activity.code, "submissions"]);
+  const idToken = requireTeacherAuthToken(params.idToken, CLOUD_SUBMISSION_AUTH_REQUIRED_ERROR);
+  const url = buildDocumentUrl(config, [config.collectionRoot, params.activity.code, "submissions"]);
   const response = await fetch(url, {
     headers: {
       Authorization: `Bearer ${idToken}`,
@@ -202,7 +198,7 @@ export async function fetchCloudSubmissions(
 export async function deleteCloudSubmission(params: {
   activity: ParticipationActivity;
   submission: ParticipationSubmission;
-  idToken?: string;
+  idToken: string;
 }): Promise<void> {
   const config = getCloudParticipationConfig();
   const idToken = requireTeacherAuthToken(

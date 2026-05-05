@@ -10,7 +10,6 @@ service cloud.firestore {
       return isHomeroomActivity(request.resource.data)
         && request.resource.data.code == code
         && request.resource.data.teacherUid is string
-        && request.resource.data.teacherUid == request.auth.uid
         && request.resource.data.teacherId is string
         && request.resource.data.classId is string
         && request.resource.data.activityId is string
@@ -42,7 +41,11 @@ service cloud.firestore {
 
     match /homeroomPublicActivities/{code} {
       allow read: if isExistingHomeroomActivity();
-      allow create, update: if isHomeroomActivityWrite(code);
+      allow create: if isHomeroomActivityWrite(code) && request.resource.data.teacherUid == request.auth.uid;
+      allow update: if isHomeroomActivityWrite(code)
+        && request.auth != null
+        && request.resource.data.teacherUid == resource.data.teacherUid
+        && request.resource.data.teacherUid == request.auth.uid;
       allow delete: if isHomeroomActivityOwnerByResource();
 
       match /submissions/{submissionId} {

@@ -7,6 +7,7 @@ import {
   getActivityAvailabilityLabel,
 } from "../../../domain/participation";
 import type { HomeroomActions, HomeroomState } from "../../../state/useHomeroomState";
+import type { TeacherSession } from "../../../services/firebaseTeacherAuth";
 import {
   deleteCloudSubmission,
   fetchCloudSubmissions,
@@ -37,6 +38,8 @@ export function ActivityOperationsView({
   const [operationMessage, setOperationMessage] = useState("");
   const [isCloudBusy, setIsCloudBusy] = useState(false);
   const cloudConfig = getCloudParticipationConfig();
+  const teacherSession: TeacherSession | null = null;
+  const isCloudAuthReady = cloudConfig.enabled && teacherSession !== null;
 
   const selectedActivity = useMemo(
     () => state.activities.find((activity) => activity.activityId === selectedActivityId) ?? null,
@@ -81,6 +84,10 @@ export function ActivityOperationsView({
     if (!selectedActivity || !cloudConfig.enabled) {
       return;
     }
+    if (!teacherSession) {
+      setOperationMessage("클라우드 동기화는 교사 로그인 후에만 사용 가능합니다.");
+      return;
+    }
 
     setIsCloudBusy(true);
 
@@ -88,11 +95,13 @@ export function ActivityOperationsView({
       await publishCloudActivity(
         createCloudActivitySnapshot({
           teacherId: state.teacherId,
+          teacherUid: teacherSession.teacherUid,
           homeroomClass: state.homeroomClass,
           activity: selectedActivity,
           ruleCandidates: state.ruleCandidates,
           publishedAt: new Date().toISOString(),
         }),
+        teacherSession.idToken,
       );
       setOperationMessage(`${selectedActivity.code} 활동을 클라우드에 게시했습니다.`);
     } catch {
@@ -106,11 +115,18 @@ export function ActivityOperationsView({
     if (!selectedActivity || !cloudConfig.enabled) {
       return;
     }
+    if (!teacherSession) {
+      setOperationMessage("클라우드 동기화는 교사 로그인 후에만 사용 가능합니다.");
+      return;
+    }
 
     setIsCloudBusy(true);
 
     try {
-      const cloudSubmissions = await fetchCloudSubmissions(selectedActivity);
+      const cloudSubmissions = await fetchCloudSubmissions({
+        activity: selectedActivity,
+        idToken: teacherSession.idToken,
+      });
       const result = actions.importParticipationSubmissions(cloudSubmissions);
 
       setOperationMessage(
@@ -131,10 +147,18 @@ export function ActivityOperationsView({
     if (!targetSubmission || !selectedActivity) {
       return;
     }
+    if (!teacherSession) {
+      setOperationMessage("클라우드 동기화는 교사 로그인 후에만 사용 가능합니다.");
+      return;
+    }
 
     if (cloudConfig.enabled) {
       try {
-        await deleteCloudSubmission({ activity: selectedActivity, submission: targetSubmission });
+        await deleteCloudSubmission({
+          activity: selectedActivity,
+          submission: targetSubmission,
+          idToken: teacherSession.idToken,
+        });
       } catch {
         setOperationMessage("클라우드 제출 삭제에 실패했습니다. 잠시 후 다시 시도해 주세요.");
         return;
@@ -174,7 +198,7 @@ export function ActivityOperationsView({
         <div className="button-row">
           <button
             className="secondary-button"
-            disabled={!cloudConfig.enabled || isClassArchived || !selectedActivity || isCloudBusy}
+            disabled={!isCloudAuthReady || isClassArchived || !selectedActivity || isCloudBusy}
             type="button"
             onClick={publishSelectedActivity}
           >
@@ -183,7 +207,7 @@ export function ActivityOperationsView({
           </button>
           <button
             className="secondary-button"
-            disabled={!cloudConfig.enabled || isClassArchived || !selectedActivity || isCloudBusy}
+            disabled={!isCloudAuthReady || isClassArchived || !selectedActivity || isCloudBusy}
             type="button"
             onClick={syncSelectedSubmissions}
           >

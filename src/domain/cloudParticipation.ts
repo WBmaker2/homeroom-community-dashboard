@@ -49,7 +49,7 @@ export type SubmissionMergeResult = {
 
 export function createCloudActivitySnapshot(params: {
   teacherId: string;
-  teacherUid?: string;
+  teacherUid: string;
   homeroomClass: HomeroomClass;
   activity: ParticipationActivity;
   ruleCandidates: RuleCandidate[];
@@ -66,7 +66,7 @@ export function createCloudActivitySnapshot(params: {
     app: APP_ID,
     schemaVersion: CLOUD_SCHEMA_VERSION,
     teacherId: params.teacherId,
-    teacherUid: params.teacherUid ?? params.teacherId,
+    teacherUid: params.teacherUid,
     publishedAt: params.publishedAt,
     homeroomClass: {
       classId: params.homeroomClass.classId,

@@ -168,6 +168,17 @@ describe("cloud participation helpers", () => {
     expect("teacherEmail" in snapshot).toBe(false);
   });
 
+  it("requires teacherUid when creating cloud snapshot params", () => {
+    // @ts-expect-error: teacherUid is required for cloud snapshot creation.
+    createCloudActivitySnapshot({
+      teacherId: "T-K7Q2M9P4",
+      homeroomClass: sampleClass,
+      activity: sampleActivities[0]!,
+      ruleCandidates: sampleRuleCandidates,
+      publishedAt: "2026-05-05T10:00:00.000Z",
+    });
+  });
+
   it("parses only cloud activity payloads with teacherUid", () => {
     const snapshot = createCloudActivitySnapshot({
       teacherId: "T-K7Q2M9P4",
