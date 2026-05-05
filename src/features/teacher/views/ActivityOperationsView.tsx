@@ -7,7 +7,7 @@ import {
   getActivityAvailabilityLabel,
 } from "../../../domain/participation";
 import type { HomeroomActions, HomeroomState } from "../../../state/useHomeroomState";
-import type { TeacherSession } from "../../../services/firebaseTeacherAuth";
+import { getValidTeacherSession, type TeacherSession } from "../../../services/firebaseTeacherAuth";
 import {
   deleteCloudSubmission,
   fetchCloudSubmissions,
@@ -37,9 +37,25 @@ export function ActivityOperationsView({
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(state.activities[0]?.activityId ?? null);
   const [operationMessage, setOperationMessage] = useState("");
   const [isCloudBusy, setIsCloudBusy] = useState(false);
+  const [teacherSession, setTeacherSession] = useState<TeacherSession | null>(null);
   const cloudConfig = getCloudParticipationConfig();
-  const teacherSession: TeacherSession | null = null;
   const isCloudAuthReady = cloudConfig.enabled && teacherSession !== null;
+
+  useEffect(() => {
+    let mounted = true;
+
+    void (async () => {
+      const session = await getValidTeacherSession();
+
+      if (mounted) {
+        setTeacherSession(session);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const selectedActivity = useMemo(
     () => state.activities.find((activity) => activity.activityId === selectedActivityId) ?? null,
@@ -147,22 +163,26 @@ export function ActivityOperationsView({
     if (!targetSubmission || !selectedActivity) {
       return;
     }
-    if (!teacherSession) {
+    if (!cloudConfig.enabled) {
+      actions.deleteSubmission(submissionId);
+      setOperationMessage("선택한 제출을 삭제했습니다.");
+      return;
+    }
+
+    if (!teacherSession?.idToken) {
       setOperationMessage("클라우드 동기화는 교사 로그인 후에만 사용 가능합니다.");
       return;
     }
 
-    if (cloudConfig.enabled) {
-      try {
-        await deleteCloudSubmission({
-          activity: selectedActivity,
-          submission: targetSubmission,
-          idToken: teacherSession.idToken,
-        });
-      } catch {
-        setOperationMessage("클라우드 제출 삭제에 실패했습니다. 잠시 후 다시 시도해 주세요.");
-        return;
-      }
+    try {
+      await deleteCloudSubmission({
+        activity: selectedActivity,
+        submission: targetSubmission,
+        idToken: teacherSession.idToken,
+      });
+    } catch {
+      setOperationMessage("클라우드 제출 삭제에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+      return;
     }
 
     actions.deleteSubmission(submissionId);
