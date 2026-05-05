@@ -107,6 +107,8 @@ export type HomeroomActions = {
   setClassroomRules: Dispatch<SetStateAction<ClassroomRule[]>>;
   setActivities: Dispatch<SetStateAction<ParticipationActivity[]>>;
   setSubmissions: Dispatch<SetStateAction<ParticipationSubmission[]>>;
+  updateActivityStatus: (activityId: string, status: ParticipationActivity["status"]) => void;
+  deleteSubmission: (submissionId: string) => void;
   setSeatMap: Dispatch<SetStateAction<SeatMap>>;
   setSeatingConstraints: Dispatch<SetStateAction<SeatingConstraint[]>>;
   setManualAssignments: Dispatch<SetStateAction<SeatAssignment[]>>;
@@ -357,6 +359,8 @@ export function useHomeroomState() {
     setClassroomRules: setActiveClassroomRules,
     setActivities: setActiveActivities,
     setSubmissions: setActiveSubmissions,
+    updateActivityStatus,
+    deleteSubmission,
     setSeatMap: setActiveSeatMap,
     setSeatingConstraints: setActiveSeatingConstraints,
     setManualAssignments: setActiveManualAssignments,
@@ -608,6 +612,33 @@ export function useHomeroomState() {
 
       return { ...assignments, [activeClass.classId]: nextAssignments };
     });
+  }
+
+  function updateActivityStatus(activityId: string, status: ParticipationActivity["status"]) {
+    if (!canEditActiveClass) {
+      return;
+    }
+
+    setActiveActivities((items) =>
+      items.map((activity) =>
+        activity.activityId === activityId
+          ? {
+              ...activity,
+              status,
+            }
+          : activity,
+      ),
+    );
+  }
+
+  function deleteSubmission(submissionId: string) {
+    if (!canEditActiveClass) {
+      return;
+    }
+
+    setActiveSubmissions((items) =>
+      items.filter((submission) => submission.submissionId !== submissionId),
+    );
   }
 
   function downloadBackup() {

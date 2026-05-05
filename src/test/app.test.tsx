@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
@@ -11,6 +11,7 @@ import {
   serializeSnapshot,
   type HomeroomDataSnapshot,
 } from "../domain/persistence";
+import { createAbsoluteAppUrl } from "../domain/appRoutes";
 import {
   TEACHER_PIN_STORAGE_KEY,
   TEACHER_UNLOCK_STORAGE_KEY,
@@ -93,6 +94,40 @@ function createArchivedParticipationSnapshot(code: string): HomeroomDataSnapshot
       ...homeroomClass,
       status: "archived",
     })),
+  };
+}
+
+function createOperationsSnapshot(params: {
+  code: string;
+  status?: "open" | "closed";
+  closesAt?: string;
+  opensAt?: string;
+  type?: "agendaSubmission" | "ruleVote" | "ruleFeedback" | "praiseReport";
+  isAnonymous?: boolean;
+  allowMultipleSubmissions?: boolean;
+  submissions?: HomeroomDataSnapshot["submissions"];
+}): HomeroomDataSnapshot {
+  const snapshot = createStudentParticipationSnapshot(params.code);
+
+  return {
+    ...snapshot,
+    activities: [
+      {
+        activityId: `activity-${params.code}`,
+        classId: snapshot.homeroomClasses[0]!.classId,
+        type: params.type ?? "agendaSubmission",
+        title: `${params.code} 활동`,
+        targetId: params.type === "ruleVote" ? "candidate-test" : undefined,
+        code: params.code,
+        status: params.status ?? "open",
+        opensAt: params.opensAt ?? "2026-05-03T08:00:00+09:00",
+        closesAt: params.closesAt ?? "2026-05-03T18:00:00+09:00",
+        isAnonymous: params.isAnonymous ?? false,
+        allowMultipleSubmissions: params.allowMultipleSubmissions ?? true,
+      },
+      ...snapshot.activities,
+    ],
+    submissions: params.submissions ?? snapshot.submissions,
   };
 }
 
@@ -309,9 +344,205 @@ describe("homeroom app workflows", () => {
     await user.click(screen.getByRole("button", { name: "회의 안건" }));
     expect(screen.getByRole("button", { name: "안건 제출 열기" })).toBeDisabled();
 
+    await user.click(screen.getByRole("button", { name: "활동 운영" }));
+    const archivedActivityCopy = getActivityActionButton(archivedCode, `${archivedCode} 링크 복사`);
+    const archivedActivityClose = getActivityActionButton(archivedCode, `${archivedCode} 종료`);
+    const archivedActivityReopen = getActivityActionButton(archivedCode, `${archivedCode} 다시 열기`);
+
+    expect(archivedActivityCopy).toBeDisabled();
+    expect(archivedActivityClose).toBeDisabled();
+    expect(archivedActivityReopen).toBeDisabled();
+
     await user.click(screen.getByRole("button", { name: "학급 설정" }));
     expect(screen.getByRole("button", { name: "학생 등록" })).toBeDisabled();
     expect(screen.getAllByRole("button", { name: "저장" }).at(-1)!).toBeDisabled();
+  });
+
+  it("copies exact join links per activity from activity operations", async () => {
+    const user = userEvent.setup();
+    const activityCode = "COPY-JOIN-0001";
+
+    unlockTeacherSession();
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      serializeSnapshot(
+        createSnapshotPayload({
+          snapshot: createOperationsSnapshot({
+            code: activityCode,
+            type: "agendaSubmission",
+            isAnonymous: false,
+            allowMultipleSubmissions: true,
+            opensAt: "2026-05-03T09:00:00+09:00",
+            closesAt: "2026-05-03T18:00:00+09:00",
+          }),
+          savedAt: "2026-05-03T09:00:00.000Z",
+        }),
+      ),
+    );
+
+    const writeTextSpy = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+
+    renderAt("/teacher");
+
+    await user.click(screen.getByRole("button", { name: "활동 운영" }));
+    await user.click(getActivityRowButton(activityCode));
+    await user.click(getActivityActionButton(activityCode, `${activityCode} 링크 복사`));
+
+    expect(writeTextSpy).toHaveBeenCalledWith(createAbsoluteAppUrl(`/join/${activityCode}`));
+    expect(screen.getByRole("status").textContent).toContain(`${activityCode} 링크를 복사했습니다.`);
+  });
+
+  it("disables student submission after closing an activity and re-enables it after reopening", async () => {
+    const user = userEvent.setup();
+    const activityCode = "CLOSE-REOPEN-0001";
+    const fixedNow = "2026-05-03T10:00:00+09:00";
+
+    const nowSpy = vi.spyOn(timePolicy, "getCurrentHomeroomIso").mockReturnValue(fixedNow);
+
+    unlockTeacherSession();
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      serializeSnapshot(
+        createSnapshotPayload({
+          snapshot: createOperationsSnapshot({
+            code: activityCode,
+            type: "agendaSubmission",
+            isAnonymous: false,
+            allowMultipleSubmissions: true,
+            opensAt: "2026-05-03T09:00:00+09:00",
+            closesAt: "2026-05-03T18:00:00+09:00",
+          }),
+          savedAt: "2026-05-03T09:00:00.000Z",
+        }),
+      ),
+    );
+
+    renderAt("/teacher");
+
+    await user.click(screen.getByRole("button", { name: "활동 운영" }));
+    await user.click(getActivityRowButton(activityCode));
+    await user.click(getActivityActionButton(activityCode, `${activityCode} 종료`));
+
+    navigateTo(`/join/${activityCode}`);
+
+    await user.type(screen.getByLabelText("학급 번호"), "1");
+    await user.type(screen.getByLabelText("안건"), "마감 후 제출 시도");
+    expect(screen.getByRole("button", { name: "제출" })).toBeDisabled();
+
+    navigateTo("/teacher");
+
+    await user.click(screen.getByRole("button", { name: "활동 운영" }));
+    await user.click(getActivityRowButton(activityCode));
+    await user.click(getActivityActionButton(activityCode, `${activityCode} 다시 열기`));
+
+    navigateTo(`/join/${activityCode}`);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "제출" })).toBeEnabled());
+    await user.clear(screen.getByLabelText("학급 번호"));
+    await user.type(screen.getByLabelText("학급 번호"), "1");
+    await user.type(screen.getByLabelText("안건"), "재오픈 후 제출");
+    await user.click(screen.getByRole("button", { name: "제출" }));
+
+    expect(screen.getByRole("status").textContent).toContain("제출되었습니다.");
+
+    nowSpy.mockRestore();
+  });
+
+  it("allows one-time re-submission after deleting submission record", async () => {
+    const user = userEvent.setup();
+    const activityCode = "DELETE-RESUBMIT-0001";
+    const fixedNow = "2026-05-03T10:00:00+09:00";
+
+    const nowSpy = vi.spyOn(timePolicy, "getCurrentHomeroomIso").mockReturnValue(fixedNow);
+
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      serializeSnapshot(
+        createSnapshotPayload({
+          snapshot: createOperationsSnapshot({
+            code: activityCode,
+            type: "agendaSubmission",
+            isAnonymous: false,
+            allowMultipleSubmissions: false,
+            opensAt: "2026-05-03T09:00:00+09:00",
+            closesAt: "2026-05-03T18:00:00+09:00",
+          }),
+          savedAt: "2026-05-03T09:00:00.000Z",
+        }),
+      ),
+    );
+
+    renderAt(`/join/${activityCode}`);
+
+    await user.type(screen.getByLabelText("학급 번호"), "1");
+    await user.type(screen.getByLabelText("안건"), "첫 번째 제출");
+    await user.click(screen.getByRole("button", { name: "제출" }));
+    expect(screen.getByRole("status").textContent).toContain("제출되었습니다.");
+
+    unlockTeacherSession();
+    navigateTo("/teacher");
+
+    await user.click(screen.getByRole("button", { name: "활동 운영" }));
+    await user.click(getActivityRowButton(activityCode));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "제출 삭제" })).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("button", { name: "제출 삭제" }));
+
+    navigateTo(`/join/${activityCode}`);
+
+    await user.clear(screen.getByLabelText("학급 번호"));
+    await user.type(screen.getByLabelText("학급 번호"), "1");
+    await user.clear(screen.getByLabelText("안건"));
+    await user.type(screen.getByLabelText("안건"), "두 번째 제출");
+    await user.click(screen.getByRole("button", { name: "제출" }));
+
+    expect(screen.getByRole("status").textContent).toContain("제출되었습니다.");
+
+    nowSpy.mockRestore();
+  });
+
+  it("hides student identity for anonymous submissions in operations view", async () => {
+    const user = userEvent.setup();
+    const activityCode = "ANON-OPS-0001";
+    const classId = "class-imported";
+    const activityId = `activity-${activityCode}`;
+
+    unlockTeacherSession();
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      serializeSnapshot(
+        createSnapshotPayload({
+          snapshot: createOperationsSnapshot({
+            code: activityCode,
+            type: "agendaSubmission",
+            isAnonymous: true,
+            allowMultipleSubmissions: true,
+            opensAt: "2026-05-03T09:00:00+09:00",
+            closesAt: "2026-05-03T18:00:00+09:00",
+            submissions: [
+              {
+                submissionId: "submission-anon-01",
+                classId,
+                activityId,
+                studentId: "s01",
+                submittedAt: "2026-05-03T10:00:00+09:00",
+                content: "익명으로 남깁니다",
+              },
+            ],
+          }),
+          savedAt: "2026-05-03T09:00:00.000Z",
+        }),
+      ),
+    );
+
+    renderAt("/teacher");
+
+    await user.click(screen.getByRole("button", { name: "활동 운영" }));
+    await user.click(getActivityRowButton(activityCode));
+
+    expect(screen.getByText("익명 제출")).toBeInTheDocument();
+    expect(screen.queryByText("민준")).not.toBeInTheDocument();
   });
 
   it("blocks student submissions for archived classes", () => {
@@ -461,6 +692,37 @@ function renderAt(path: string) {
   window.history.pushState(null, "", path);
 
   return render(<App />);
+}
+
+function navigateTo(path: string) {
+  act(() => {
+    window.history.pushState(null, "", path);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+}
+
+function getActivityRowButton(activityCode: string) {
+  const escapedCode = activityCode.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const rowButton = screen
+    .getAllByRole("button", { name: new RegExp(escapedCode) })
+    .find((button) => button.classList.contains("text-button"));
+
+  if (!rowButton) {
+    throw new Error(`활동 ${activityCode} 행을 찾을 수 없습니다.`);
+  }
+
+  return rowButton;
+}
+
+function getActivityActionButton(activityCode: string, actionLabel: string) {
+  const rowButton = getActivityRowButton(activityCode);
+  const rowArticle = rowButton.closest("article");
+
+  if (!rowArticle) {
+    throw new Error(`활동 ${activityCode} 행을 찾을 수 없습니다.`);
+  }
+
+  return within(rowArticle).getByRole("button", { name: actionLabel });
 }
 
 function unlockTeacherSession() {

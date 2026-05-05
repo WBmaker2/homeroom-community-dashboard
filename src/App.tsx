@@ -84,7 +84,7 @@ export default function App() {
         <button
           className="secondary-button wide"
           type="button"
-          onClick={() => navigate(`/join/${encodeURIComponent(homeroom.state.activities[0]?.code ?? "")}`)}
+          onClick={() => navigate("/student")}
         >
           <Link2 size={16} aria-hidden="true" />
           샘플 참여 링크 열기

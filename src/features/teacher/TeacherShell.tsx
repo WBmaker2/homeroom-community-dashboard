@@ -2,6 +2,7 @@ import {
   CheckCircle2,
   ClipboardList,
   Copy,
+  ListTodo,
   HandHeart,
   LayoutDashboard,
   Lock,
@@ -17,6 +18,7 @@ import type { recommendSeatingPlan } from "../../domain/seating";
 import type { HomeroomActions, HomeroomState } from "../../state/useHomeroomState";
 import { AgendaView } from "./views/AgendaView";
 import { DashboardView } from "./views/DashboardView";
+import { ActivityOperationsView } from "./views/ActivityOperationsView";
 import { PraiseView } from "./views/PraiseView";
 import { RulesView } from "./views/RulesView";
 import { SeatingView } from "./views/SeatingView";
@@ -28,6 +30,7 @@ const navItems = [
   { id: "praise", label: "칭찬 기록", icon: HandHeart },
   { id: "agenda", label: "회의 안건", icon: ClipboardList },
   { id: "rules", label: "규칙 합의", icon: CheckCircle2 },
+  { id: "activityOperations", label: "활동 운영", icon: ListTodo },
   { id: "settings", label: "학급 설정", icon: Settings },
 ] as const;
 
@@ -53,10 +56,7 @@ export function TeacherShell({
   const [activeView, setActiveView] = useState<ActiveView>("dashboard");
   const [shareMessage, setShareMessage] = useState("");
   const isClassArchived = state.homeroomClass.status === "archived";
-  const openActivity = isClassArchived
-    ? undefined
-    : state.activities.find((activity) => activity.status === "open");
-  const studentLink = openActivity ? createStudentLink(openActivity.code) : createStudentLink();
+  const studentLink = createStudentLink();
 
   async function copyStudentLink() {
     try {
@@ -165,6 +165,13 @@ export function TeacherShell({
         )}
         {activeView === "agenda" && (
           <AgendaView state={state} actions={actions} getStudentName={getStudentName} />
+        )}
+        {activeView === "activityOperations" && (
+          <ActivityOperationsView
+            state={state}
+            actions={actions}
+            getStudentName={getStudentName}
+          />
         )}
         {activeView === "rules" && <RulesView state={state} actions={actions} />}
         {activeView === "settings" && <SettingsView state={state} actions={actions} />}

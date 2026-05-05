@@ -36,6 +36,14 @@ export function StudentParticipation({
     [codeInput, state.activities],
   );
   const isClassArchived = state.homeroomClass.status === "archived";
+  const nowIso = getCurrentHomeroomIso();
+  const isBeforeOpen = activity
+    ? new Date(nowIso).getTime() < new Date(activity.opensAt).getTime()
+    : false;
+  const isExpired = activity ? new Date(nowIso).getTime() > new Date(activity.closesAt).getTime() : false;
+  const isActivityClosed = activity?.status === "closed" || isExpired;
+  const isSubmitDisabled = isClassArchived || isActivityClosed || isBeforeOpen;
+  const isActivityUnavailable = isClassArchived || isActivityClosed || isBeforeOpen;
   const targetCandidate = activity?.targetId
     ? state.ruleCandidates.find((candidate) => candidate.ruleCandidateId === activity.targetId)
     : null;
@@ -196,15 +204,31 @@ export function StudentParticipation({
           </div>
         ) : activity ? (
           <div className="participation-panel">
-            <div className="panel-heading">
-              <div>
-                <h1>{activity.title}</h1>
-                <p>{activity.isAnonymous ? "익명 참여" : "번호 확인 참여"}</p>
+              <div className="panel-heading">
+                <div>
+                  <h1>{activity.title}</h1>
+                  <p>{activity.isAnonymous ? "익명 참여" : "번호 확인 참여"}</p>
+                </div>
+                <span className="status-chip">
+                  {isClassArchived
+                    ? "보관 학급"
+                    : isBeforeOpen
+                      ? "시작 전"
+                      : isActivityClosed
+                        ? "마감"
+                        : "열림"}
+                </span>
               </div>
-              <span className="status-chip">
-                {isClassArchived ? "보관 학급" : activity.status === "open" ? "열림" : "닫힘"}
-              </span>
-            </div>
+
+              {isActivityUnavailable && !isClassArchived && (
+                <p className="archive-notice">
+                  {isBeforeOpen
+                    ? "이 활동은 아직 시작 전입니다."
+                    : isActivityClosed
+                      ? "이 활동은 종료되어 제출이 차단됩니다."
+                      : ""}
+                </p>
+              )}
 
             {isClassArchived && (
               <p className="archive-notice">
@@ -285,7 +309,7 @@ export function StudentParticipation({
 
             <button
               className="primary-button wide"
-              disabled={isClassArchived}
+              disabled={isSubmitDisabled}
               type="button"
               onClick={submit}
             >

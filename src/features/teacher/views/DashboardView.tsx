@@ -46,6 +46,11 @@ export function DashboardView({
               onClick={() => setActiveView("agenda")}
             />
             <TaskRow
+              title="활동 운영"
+              detail={`${activities.length}개 참여 활동의 링크·제출 상태를 관리합니다.`}
+              onClick={() => setActiveView("activityOperations")}
+            />
+            <TaskRow
               title="칭찬 공백 확인"
               detail={
                 signals.praiseGapStudents.length > 0

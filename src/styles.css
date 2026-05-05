@@ -619,6 +619,32 @@ label {
   background: #fff6dd;
 }
 
+.activity-operations-grid {
+  align-items: start;
+}
+
+.submission-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.activity-row .text-button {
+  display: grid;
+  justify-items: start;
+  gap: 3px;
+  text-align: left;
+}
+
+.activity-row .text-button span {
+  margin-top: 0;
+}
+
+.activity-row p {
+  margin: 2px 0 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
 .activity-row strong,
 .review-item strong {
   display: block;
