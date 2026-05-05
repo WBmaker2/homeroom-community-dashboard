@@ -7,7 +7,14 @@ import {
   getActivityAvailabilityLabel,
 } from "../../../domain/participation";
 import type { HomeroomActions, HomeroomState } from "../../../state/useHomeroomState";
-import { getValidTeacherSession, type TeacherSession } from "../../../services/firebaseTeacherAuth";
+import {
+  getTeacherAuthConfig,
+  getValidTeacherSession,
+  saveTeacherSession,
+  signInTeacherWithEmail,
+  signOutTeacherSession,
+  type TeacherSession,
+} from "../../../services/firebaseTeacherAuth";
 import {
   deleteCloudSubmission,
   fetchCloudSubmissions,
@@ -37,9 +44,15 @@ export function ActivityOperationsView({
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(state.activities[0]?.activityId ?? null);
   const [operationMessage, setOperationMessage] = useState("");
   const [isCloudBusy, setIsCloudBusy] = useState(false);
+  const [isAuthBusy, setIsAuthBusy] = useState(false);
+  const [teacherEmailInput, setTeacherEmailInput] = useState("");
+  const [teacherPasswordInput, setTeacherPasswordInput] = useState("");
   const [teacherSession, setTeacherSession] = useState<TeacherSession | null>(null);
   const cloudConfig = getCloudParticipationConfig();
+  const teacherAuthConfig = getTeacherAuthConfig();
   const isCloudAuthReady = cloudConfig.enabled;
+  const isTeacherAuthReady = teacherAuthConfig.enabled;
+  const isBusy = isCloudBusy || isAuthBusy;
 
   useEffect(() => {
     let mounted = true;
@@ -66,9 +79,54 @@ export function ActivityOperationsView({
     return session;
   }
 
+  async function signInTeacher() {
+    const normalizedEmail = teacherEmailInput.trim();
+
+    if (!isTeacherAuthReady) {
+      setOperationMessage(teacherAuthConfig.reason);
+      return;
+    }
+
+    if (!normalizedEmail || !teacherPasswordInput.trim()) {
+      setOperationMessage("이메일과 비밀번호를 모두 입력해 주세요.");
+      return;
+    }
+
+    setIsAuthBusy(true);
+    setOperationMessage("");
+
+    try {
+      const session = await signInTeacherWithEmail(normalizedEmail, teacherPasswordInput);
+
+      saveTeacherSession(session);
+      setTeacherSession(session);
+      setTeacherPasswordInput("");
+      setOperationMessage(`${session.email} 교사 로그인이 완료되었습니다.`);
+    } catch {
+      setOperationMessage("교사 로그인에 실패했습니다. 이메일 또는 비밀번호를 확인해 주세요.");
+    } finally {
+      setIsAuthBusy(false);
+    }
+  }
+
+  function signOutTeacher() {
+    signOutTeacherSession();
+    setTeacherSession(null);
+    setOperationMessage("교사 로그아웃이 완료되었습니다.");
+  }
+
   const selectedActivity = useMemo(
     () => state.activities.find((activity) => activity.activityId === selectedActivityId) ?? null,
     [selectedActivityId, state.activities],
+  );
+  const isCloudActionEnabled = Boolean(
+    selectedActivityId &&
+      selectedActivity &&
+      isCloudAuthReady &&
+      isTeacherAuthReady &&
+      teacherSession &&
+      !isBusy &&
+      !isClassArchived,
   );
 
   useEffect(() => {
@@ -223,16 +281,69 @@ export function ActivityOperationsView({
             <h2>클라우드 참여 동기화</h2>
             <p>
               {cloudConfig.enabled
-                ? "선택 활동을 게시하고 학생 기기에서 들어온 제출을 불러옵니다."
+                ? isTeacherAuthReady
+                  ? "선택 활동을 게시하고 학생 기기에서 들어온 제출을 불러옵니다."
+                  : teacherAuthConfig.reason
                 : cloudConfig.reason}
             </p>
           </div>
           <Cloud size={22} aria-hidden="true" />
         </div>
+        {isCloudAuthReady && isTeacherAuthReady && !teacherSession && (
+          <div className="form-grid compact">
+            <label>
+              교사 이메일
+              <input
+                autoComplete="username"
+                inputMode="email"
+                type="email"
+                value={teacherEmailInput}
+                onChange={(event) => setTeacherEmailInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    void signInTeacher();
+                  }
+                }}
+              />
+            </label>
+            <label>
+              교사 비밀번호
+              <input
+                autoComplete="current-password"
+                type="password"
+                value={teacherPasswordInput}
+                onChange={(event) => setTeacherPasswordInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    void signInTeacher();
+                  }
+                }}
+              />
+            </label>
+            <button
+              className="primary-button"
+              disabled={isBusy || !teacherEmailInput.trim() || !teacherPasswordInput.trim()}
+              type="button"
+              onClick={() => void signInTeacher()}
+            >
+              교사 로그인
+            </button>
+          </div>
+        )}
+        {isCloudAuthReady && isTeacherAuthReady && teacherSession && (
+          <div className="button-row">
+            <span className="status-chip" aria-live="polite">
+              로그인: {teacherSession.email}
+            </span>
+            <button className="secondary-button" disabled={isBusy} type="button" onClick={signOutTeacher}>
+              로그아웃
+            </button>
+          </div>
+        )}
         <div className="button-row">
           <button
             className="secondary-button"
-            disabled={!isCloudAuthReady || isClassArchived || !selectedActivity || isCloudBusy}
+            disabled={!isCloudActionEnabled}
             type="button"
             onClick={publishSelectedActivity}
           >
@@ -241,7 +352,7 @@ export function ActivityOperationsView({
           </button>
           <button
             className="secondary-button"
-            disabled={!isCloudAuthReady || isClassArchived || !selectedActivity || isCloudBusy}
+            disabled={!isCloudActionEnabled}
             type="button"
             onClick={syncSelectedSubmissions}
           >

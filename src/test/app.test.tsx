@@ -12,6 +12,7 @@ import {
   type HomeroomDataSnapshot,
 } from "../domain/persistence";
 import { createAbsoluteAppUrl } from "../domain/appRoutes";
+import { TEACHER_SESSION_STORAGE_KEY } from "../services/firebaseTeacherAuth";
 import {
   TEACHER_PIN_STORAGE_KEY,
   TEACHER_UNLOCK_STORAGE_KEY,
@@ -864,6 +865,234 @@ describe("homeroom app workflows", () => {
       expect(persisted.classroomRules[0]?.checkDate).toBe(expectedConfirmedRuleCheckDate);
       expect(persisted.classroomRules[0]?.title).toBe("모둠 활동 시작 전 역할 확인하기");
     });
+  });
+
+  it("shows teacher login form when cloud is enabled but no teacher session exists", async () => {
+    const user = userEvent.setup();
+
+    vi.stubEnv("VITE_FIREBASE_PROJECT_ID", "homeroom-test-project");
+    vi.stubEnv("VITE_FIREBASE_API_KEY", "api-key-123");
+    vi.spyOn(globalThis, "fetch");
+
+    unlockTeacherSession();
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      serializeSnapshot(
+        createSnapshotPayload({
+          snapshot: createOperationsSnapshot({
+            code: "CLOUD-NOSESSION-0001",
+            type: "agendaSubmission",
+            isAnonymous: false,
+            allowMultipleSubmissions: true,
+            opensAt: "2026-05-03T09:00:00+09:00",
+            closesAt: "2026-05-03T18:00:00+09:00",
+          }),
+          savedAt: "2026-05-03T09:00:00.000Z",
+        }),
+      ),
+    );
+
+    renderAt("/teacher");
+    await user.click(screen.getByRole("button", { name: "활동 운영" }));
+
+    expect(screen.getByLabelText("교사 이메일")).toBeInTheDocument();
+    expect(screen.getByLabelText("교사 비밀번호")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "교사 로그인" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "선택 활동 게시" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "로그아웃" })).not.toBeInTheDocument();
+  });
+
+  it("allows teacher login and enables cloud controls with real session persistence", async () => {
+    const user = userEvent.setup();
+    const signInResponse = {
+      localId: "teacher-uid-001",
+      email: "teacher@example.com",
+      idToken: "id-token-001",
+      refreshToken: "refresh-token-001",
+      expiresIn: "3600",
+    };
+
+    vi.stubEnv("VITE_FIREBASE_PROJECT_ID", "homeroom-test-project");
+    vi.stubEnv("VITE_FIREBASE_API_KEY", "api-key-123");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(signInResponse), { status: 200 }),
+    );
+
+    unlockTeacherSession();
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      serializeSnapshot(
+        createSnapshotPayload({
+          snapshot: createOperationsSnapshot({
+            code: "CLOUD-LOGIN-0001",
+            type: "agendaSubmission",
+            isAnonymous: false,
+            allowMultipleSubmissions: true,
+            opensAt: "2026-05-03T09:00:00+09:00",
+            closesAt: "2026-05-03T18:00:00+09:00",
+          }),
+          savedAt: "2026-05-03T09:00:00.000Z",
+        }),
+      ),
+    );
+
+    renderAt("/teacher");
+    await user.click(screen.getByRole("button", { name: "활동 운영" }));
+    await user.type(screen.getByLabelText("교사 이메일"), "teacher@example.com");
+    await user.type(screen.getByLabelText("교사 비밀번호"), "teacher-password");
+
+    await user.click(screen.getByRole("button", { name: "교사 로그인" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("status"),
+      ).toHaveTextContent("teacher@example.com 교사 로그인이 완료되었습니다.");
+      expect(screen.getByText("로그인: teacher@example.com")).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "선택 활동 게시" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "제출 불러오기" })).toBeEnabled();
+    });
+
+    expect(screen.getByRole("button", { name: "로그아웃" })).toBeInTheDocument();
+    expect(window.localStorage.getItem(TEACHER_SESSION_STORAGE_KEY)).toContain("teacher-uid-001");
+
+    const signInCall = vi.mocked(globalThis.fetch).mock.calls[0];
+    expect(signInCall?.[0]).toBe(
+      "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=api-key-123",
+    );
+  });
+
+  it("logs out teacher session and returns to login form", async () => {
+    const user = userEvent.setup();
+
+    vi.stubEnv("VITE_FIREBASE_PROJECT_ID", "homeroom-test-project");
+    vi.stubEnv("VITE_FIREBASE_API_KEY", "api-key-123");
+    vi.spyOn(globalThis, "fetch");
+
+    window.localStorage.setItem(
+      TEACHER_SESSION_STORAGE_KEY,
+      JSON.stringify({
+        teacherUid: "teacher-uid-001",
+        email: "teacher@example.com",
+        idToken: "id-token-001",
+        refreshToken: "refresh-token-001",
+        expiresAt: Date.now() + 3600_000,
+      }),
+    );
+
+    unlockTeacherSession();
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      serializeSnapshot(
+        createSnapshotPayload({
+          snapshot: createOperationsSnapshot({
+            code: "CLOUD-LOGOUT-0001",
+            type: "agendaSubmission",
+            isAnonymous: false,
+            allowMultipleSubmissions: true,
+            opensAt: "2026-05-03T09:00:00+09:00",
+            closesAt: "2026-05-03T18:00:00+09:00",
+          }),
+          savedAt: "2026-05-03T09:00:00.000Z",
+        }),
+      ),
+    );
+
+    renderAt("/teacher");
+    await user.click(screen.getByRole("button", { name: "활동 운영" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "로그아웃" })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "로그아웃" }));
+
+    expect(screen.getByRole("button", { name: "교사 로그인" })).toBeInTheDocument();
+    expect(screen.getByLabelText("교사 이메일")).toBeInTheDocument();
+    expect(window.localStorage.getItem(TEACHER_SESSION_STORAGE_KEY)).toBeNull();
+    expect(screen.getByRole("button", { name: "선택 활동 게시" })).toBeDisabled();
+  });
+
+  it("keeps local submission deletion working when cloud config is disabled", async () => {
+    const user = userEvent.setup();
+
+    vi.stubEnv("VITE_FIREBASE_PROJECT_ID", "");
+    vi.stubEnv("VITE_FIREBASE_API_KEY", "");
+    unlockTeacherSession();
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      serializeSnapshot(
+        createSnapshotPayload({
+          snapshot: createOperationsSnapshot({
+            code: "LOCAL-DEL-0001",
+            type: "agendaSubmission",
+            isAnonymous: false,
+            allowMultipleSubmissions: true,
+            opensAt: "2026-05-03T09:00:00+09:00",
+            closesAt: "2026-05-03T18:00:00+09:00",
+            submissions: [
+              {
+                submissionId: "submission-local-delete",
+                classId: "class-imported",
+                activityId: `activity-LOCAL-DEL-0001`,
+                studentId: "student-imported-01",
+                submittedAt: "2026-05-03T10:00:00+09:00",
+                content: "로컬 삭제 테스트",
+              },
+            ],
+          }),
+          savedAt: "2026-05-03T09:00:00.000Z",
+        }),
+      ),
+    );
+    vi.spyOn(globalThis, "fetch");
+
+    renderAt("/teacher");
+    await user.click(screen.getByRole("button", { name: "활동 운영" }));
+    await user.click(getActivityRowButton("LOCAL-DEL-0001"));
+    await user.click(screen.getByRole("button", { name: "제출 삭제" }));
+
+    expect(screen.getByRole("status").textContent).toContain("선택한 제출을 삭제했습니다.");
+    expect(screen.queryByText("로컬 삭제 테스트")).not.toBeInTheDocument();
+    expect(screen.getAllByText("제출 기록이 없습니다.").length).toBeGreaterThan(0);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("does not show teacher login UI when Firebase auth config is unavailable", async () => {
+    const user = userEvent.setup();
+
+    vi.stubEnv("VITE_FIREBASE_PROJECT_ID", "");
+    vi.stubEnv("VITE_FIREBASE_API_KEY", "");
+    vi.spyOn(globalThis, "fetch");
+
+    unlockTeacherSession();
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      serializeSnapshot(
+        createSnapshotPayload({
+          snapshot: createOperationsSnapshot({
+            code: "LOCAL-NOCLOUD-0001",
+            type: "agendaSubmission",
+            isAnonymous: false,
+            allowMultipleSubmissions: true,
+            opensAt: "2026-05-03T09:00:00+09:00",
+            closesAt: "2026-05-03T18:00:00+09:00",
+          }),
+          savedAt: "2026-05-03T09:00:00.000Z",
+        }),
+      ),
+    );
+
+    renderAt("/teacher");
+    await user.click(screen.getByRole("button", { name: "활동 운영" }));
+
+    expect(screen.queryByLabelText("교사 이메일")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Firebase 환경변수가 없어 로컬 모드로 동작합니다."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "선택 활동 게시" })).toBeDisabled();
   });
 });
 
