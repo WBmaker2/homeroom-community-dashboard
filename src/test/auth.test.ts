@@ -254,6 +254,41 @@ describe("firebase teacher auth service", () => {
     expect(readStoredTeacherSession(storage)).toBeNull();
   });
 
+  it("keeps session for UI when refresh endpoint has a temporary HTTP failure", async () => {
+    const storage = createMemoryStorage();
+    const fixedNow = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(fixedNow);
+    saveTeacherSession(
+      {
+        teacherUid: "teacher-uid",
+        email: "teacher@example.com",
+        idToken: "old-id-token",
+        refreshToken: "old-refresh",
+        expiresAt: fixedNow - 1_000,
+      },
+      storage,
+    );
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(JSON.stringify({ error: { message: "temporarily unavailable" } }), {
+        status: 503,
+      }),
+    );
+
+    const result = await getTeacherSessionForCloudRequest(storage);
+
+    expect(result.sessionForCloudRequest).toBeNull();
+    expect(result.sessionForDisplay).toMatchObject({
+      teacherUid: "teacher-uid",
+      email: "teacher@example.com",
+      refreshToken: "old-refresh",
+    });
+    expect(result.transientFailure).toBe(true);
+    expect(readStoredTeacherSession(storage)).toMatchObject({
+      teacherUid: "teacher-uid",
+      refreshToken: "old-refresh",
+    });
+  });
+
   it("does not clear stored refresh token when refresh is transiently failing", async () => {
     const storage = createMemoryStorage();
     const fixedNow = 1_700_000_000_000;

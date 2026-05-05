@@ -154,7 +154,9 @@ export async function refreshTeacherSession(session: TeacherSession): Promise<Te
   }
 
   if (!response.ok) {
-    throw new TeacherSessionRefreshError("terminal");
+    throw new TeacherSessionRefreshError(
+      isTerminalRefreshStatus(response.status) ? "terminal" : "transient",
+    );
   }
 
   let rawPayload: unknown;
@@ -341,6 +343,10 @@ function mapRefreshSession(payload: RefreshResponse, email: string): TeacherSess
     refreshToken,
     expiresAt: Date.now() + expiresIn * 1000,
   };
+}
+
+function isTerminalRefreshStatus(status: number): boolean {
+  return status === 400 || status === 401 || status === 403;
 }
 
 function isTeacherSession(value: unknown): value is TeacherSession {

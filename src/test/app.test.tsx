@@ -967,21 +967,20 @@ describe("homeroom app workflows", () => {
   it("publishes selected activity with teacher auth token and top-level teacherUid", async () => {
     const user = userEvent.setup();
     const activityCode = "CLOUD-PUB-0001";
+    const signInResponse = {
+      localId: "teacher-uid-001",
+      email: "teacher@example.com",
+      idToken: "id-token-001",
+      refreshToken: "refresh-token-001",
+      expiresIn: "3600",
+    };
 
     vi.stubEnv("VITE_FIREBASE_PROJECT_ID", "homeroom-test-project");
     vi.stubEnv("VITE_FIREBASE_API_KEY", "api-key-123");
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify(signInResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response("{}", { status: 200 }));
 
-    window.localStorage.setItem(
-      TEACHER_SESSION_STORAGE_KEY,
-      JSON.stringify({
-        teacherUid: "teacher-uid-001",
-        email: "teacher@example.com",
-        idToken: "id-token-001",
-        refreshToken: "refresh-token-001",
-        expiresAt: Date.now() + 3_600_000,
-      }),
-    );
     unlockTeacherSession();
     window.localStorage.setItem(
       STORAGE_KEY,
@@ -1002,11 +1001,19 @@ describe("homeroom app workflows", () => {
 
     renderAt("/teacher");
     await user.click(screen.getByRole("button", { name: "활동 운영" }));
+    await user.type(screen.getByLabelText("교사 이메일"), "teacher@example.com");
+    await user.type(screen.getByLabelText("교사 비밀번호"), "teacher-password");
+    await user.click(screen.getByRole("button", { name: "교사 로그인" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("로그인: teacher@example.com")).toBeInTheDocument();
+    });
+
     await user.click(getActivityRowButton(activityCode));
     await user.click(screen.getByRole("button", { name: "선택 활동 게시" }));
 
     await waitFor(() => {
-      const [requestUrl, requestOptions] = vi.mocked(globalThis.fetch).mock.calls[0] ?? [];
+      const [requestUrl, requestOptions] = vi.mocked(globalThis.fetch).mock.calls[1] ?? [];
       expect(requestUrl).toBe(
         "https://firestore.googleapis.com/v1/projects/homeroom-test-project/databases/(default)/documents/homeroomPublicActivities/CLOUD-PUB-0001?key=api-key-123",
       );
