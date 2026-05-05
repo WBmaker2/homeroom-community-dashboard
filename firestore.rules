@@ -2,12 +2,20 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isHomeroomActivity(data) {
+    function isLegacyHomeroomActivity(data) {
       return data.app == "homeroom-community-dashboard" && data.schemaVersion == 1;
     }
 
+    function isOwnerAwareHomeroomActivity(data) {
+      return data.app == "homeroom-community-dashboard" && data.schemaVersion == 2;
+    }
+
+    function isHomeroomActivity(data) {
+      return isLegacyHomeroomActivity(data) || isOwnerAwareHomeroomActivity(data);
+    }
+
     function isHomeroomActivityWrite(code) {
-      return isHomeroomActivity(request.resource.data)
+      return isOwnerAwareHomeroomActivity(request.resource.data)
         && request.resource.data.code == code
         && request.resource.data.teacherUid is string
         && request.resource.data.teacherId is string
@@ -41,18 +49,17 @@ service cloud.firestore {
 
     match /homeroomPublicActivities/{code} {
       allow read: if isExistingHomeroomActivity();
-      allow create: if isHomeroomActivityWrite(code) && request.resource.data.teacherUid == request.auth.uid;
-      allow update: if isHomeroomActivityWrite(code)
-        && request.auth != null
+      allow create: if request.auth != null && isHomeroomActivityWrite(code);
+      allow update: if request.auth != null && isHomeroomActivityWrite(code)
         && request.resource.data.teacherUid == resource.data.teacherUid
         && request.resource.data.teacherUid == request.auth.uid;
-      allow delete: if isHomeroomActivityOwnerByResource();
+      allow delete: if request.auth != null && isHomeroomActivityOwnerByResource();
 
       match /submissions/{submissionId} {
-        allow read: if isHomeroomActivityOwnerByCode(code);
+        allow read: if request.auth != null && isHomeroomActivityOwnerByCode(code);
         allow create: if isSubmissionCreate();
         allow update: if false;
-        allow delete: if isHomeroomActivityOwnerByCode(code);
+        allow delete: if request.auth != null && isHomeroomActivityOwnerByCode(code);
       }
     }
   }

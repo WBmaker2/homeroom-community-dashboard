@@ -5,6 +5,7 @@ import {
   parseCloudActivitySnapshot,
   parseCloudSubmissionPayload,
   type CloudActivitySnapshot,
+  type ParsedCloudActivitySnapshot,
 } from "../domain/cloudParticipation";
 import { APP_ID } from "../domain/persistence";
 import { buildParticipationKey } from "../domain/participation";
@@ -98,7 +99,7 @@ export async function publishCloudActivity(
 
 export async function fetchCloudActivityByCode(
   code: string,
-): Promise<CloudActivitySnapshot | null> {
+): Promise<ParsedCloudActivitySnapshot | null> {
   const config = getCloudParticipationConfig();
 
   if (!config.enabled) {

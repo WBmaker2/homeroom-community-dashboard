@@ -39,23 +39,32 @@ export function ActivityOperationsView({
   const [isCloudBusy, setIsCloudBusy] = useState(false);
   const [teacherSession, setTeacherSession] = useState<TeacherSession | null>(null);
   const cloudConfig = getCloudParticipationConfig();
-  const isCloudAuthReady = cloudConfig.enabled && teacherSession !== null;
+  const isCloudAuthReady = cloudConfig.enabled;
 
   useEffect(() => {
     let mounted = true;
 
-    void (async () => {
+    const refreshSession = async () => {
       const session = await getValidTeacherSession();
 
       if (mounted) {
         setTeacherSession(session);
       }
-    })();
+    };
+
+    void refreshSession();
 
     return () => {
       mounted = false;
     };
   }, []);
+
+  async function getFreshTeacherSession() {
+    const session = await getValidTeacherSession();
+    setTeacherSession(session);
+
+    return session;
+  }
 
   const selectedActivity = useMemo(
     () => state.activities.find((activity) => activity.activityId === selectedActivityId) ?? null,
@@ -100,7 +109,9 @@ export function ActivityOperationsView({
     if (!selectedActivity || !cloudConfig.enabled) {
       return;
     }
-    if (!teacherSession) {
+
+    const session = await getFreshTeacherSession();
+    if (!session) {
       setOperationMessage("클라우드 동기화는 교사 로그인 후에만 사용 가능합니다.");
       return;
     }
@@ -111,13 +122,13 @@ export function ActivityOperationsView({
       await publishCloudActivity(
         createCloudActivitySnapshot({
           teacherId: state.teacherId,
-          teacherUid: teacherSession.teacherUid,
+          teacherUid: session.teacherUid,
           homeroomClass: state.homeroomClass,
           activity: selectedActivity,
           ruleCandidates: state.ruleCandidates,
           publishedAt: new Date().toISOString(),
         }),
-        teacherSession.idToken,
+        session.idToken,
       );
       setOperationMessage(`${selectedActivity.code} 활동을 클라우드에 게시했습니다.`);
     } catch {
@@ -131,7 +142,9 @@ export function ActivityOperationsView({
     if (!selectedActivity || !cloudConfig.enabled) {
       return;
     }
-    if (!teacherSession) {
+
+    const session = await getFreshTeacherSession();
+    if (!session) {
       setOperationMessage("클라우드 동기화는 교사 로그인 후에만 사용 가능합니다.");
       return;
     }
@@ -141,7 +154,7 @@ export function ActivityOperationsView({
     try {
       const cloudSubmissions = await fetchCloudSubmissions({
         activity: selectedActivity,
-        idToken: teacherSession.idToken,
+        idToken: session.idToken,
       });
       const result = actions.importParticipationSubmissions(cloudSubmissions);
 
@@ -169,7 +182,8 @@ export function ActivityOperationsView({
       return;
     }
 
-    if (!teacherSession?.idToken) {
+    const session = await getFreshTeacherSession();
+    if (!session) {
       setOperationMessage("클라우드 동기화는 교사 로그인 후에만 사용 가능합니다.");
       return;
     }
@@ -178,7 +192,7 @@ export function ActivityOperationsView({
       await deleteCloudSubmission({
         activity: selectedActivity,
         submission: targetSubmission,
-        idToken: teacherSession.idToken,
+        idToken: session.idToken,
       });
     } catch {
       setOperationMessage("클라우드 제출 삭제에 실패했습니다. 잠시 후 다시 시도해 주세요.");

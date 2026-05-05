@@ -8,7 +8,9 @@ import type {
   Student,
 } from "./types";
 
-export const CLOUD_SCHEMA_VERSION = 1;
+export const CLOUD_SCHEMA_VERSION = 2;
+export const CLOUD_SCHEMA_VERSION_LEGACY = 1;
+export const CLOUD_SUBMISSION_SCHEMA_VERSION = 1;
 export const DEFAULT_CLOUD_COLLECTION = "homeroomPublicActivities";
 
 export type CloudPublicStudent = Pick<Student, "studentId" | "studentNumber" | "displayName">;
@@ -22,20 +24,31 @@ export type CloudRuleCandidate = Pick<
   "ruleCandidateId" | "title" | "description" | "status" | "votes"
 >;
 
-export type CloudActivitySnapshot = {
+type CloudActivityCoreSnapshot = {
   app: typeof APP_ID;
-  schemaVersion: typeof CLOUD_SCHEMA_VERSION;
+  schemaVersion: typeof CLOUD_SCHEMA_VERSION | typeof CLOUD_SCHEMA_VERSION_LEGACY;
   teacherId: string;
-  teacherUid: string;
   publishedAt: string;
   homeroomClass: CloudPublicClass;
   activity: ParticipationActivity;
   ruleCandidate?: CloudRuleCandidate;
 };
 
+export type CloudActivitySnapshot = CloudActivityCoreSnapshot & {
+  schemaVersion: typeof CLOUD_SCHEMA_VERSION;
+  teacherUid: string;
+};
+
+export type LegacyCloudActivitySnapshot = CloudActivityCoreSnapshot & {
+  schemaVersion: typeof CLOUD_SCHEMA_VERSION_LEGACY;
+  teacherUid?: never;
+};
+
+export type ParsedCloudActivitySnapshot = CloudActivitySnapshot | LegacyCloudActivitySnapshot;
+
 export type CloudSubmissionPayload = {
   app: typeof APP_ID;
-  schemaVersion: typeof CLOUD_SCHEMA_VERSION;
+  schemaVersion: typeof CLOUD_SUBMISSION_SCHEMA_VERSION;
   participationKey: string;
   submittedAt: string;
   submission: ParticipationSubmission;
@@ -96,7 +109,7 @@ export function createCloudSubmissionPayload(
 ): CloudSubmissionPayload {
   return {
     app: APP_ID,
-    schemaVersion: CLOUD_SCHEMA_VERSION,
+    schemaVersion: CLOUD_SUBMISSION_SCHEMA_VERSION,
     participationKey: buildParticipationKey(
       submission.classId,
       submission.activityId,
@@ -159,14 +172,20 @@ export function mergeParticipationSubmissions(
   };
 }
 
-export function parseCloudActivitySnapshot(value: unknown): CloudActivitySnapshot | null {
-  if (!isRecord(value) || value.app !== APP_ID || value.schemaVersion !== CLOUD_SCHEMA_VERSION) {
+export function parseCloudActivitySnapshot(
+  value: unknown,
+): ParsedCloudActivitySnapshot | null {
+  if (!isRecord(value) || value.app !== APP_ID) {
+    return null;
+  }
+
+  const schemaVersion = value.schemaVersion;
+  if (schemaVersion !== CLOUD_SCHEMA_VERSION_LEGACY && schemaVersion !== CLOUD_SCHEMA_VERSION) {
     return null;
   }
 
   if (
     typeof value.teacherId !== "string" ||
-    typeof value.teacherUid !== "string" ||
     typeof value.publishedAt !== "string" ||
     !isCloudPublicClass(value.homeroomClass) ||
     !isParticipationActivity(value.activity)
@@ -174,25 +193,41 @@ export function parseCloudActivitySnapshot(value: unknown): CloudActivitySnapsho
     return null;
   }
 
-  const snapshot: CloudActivitySnapshot = {
+  const baseSnapshot: Omit<CloudActivityCoreSnapshot, "schemaVersion" | "teacherUid"> = {
     app: APP_ID,
-    schemaVersion: CLOUD_SCHEMA_VERSION,
     teacherId: value.teacherId,
-    teacherUid: value.teacherUid,
     publishedAt: value.publishedAt,
     homeroomClass: value.homeroomClass,
     activity: value.activity,
   };
+  const snapshotWithCandidate = isCloudRuleCandidate(value.ruleCandidate)
+    ? { ...baseSnapshot, ruleCandidate: value.ruleCandidate }
+    : baseSnapshot;
 
-  if (isCloudRuleCandidate(value.ruleCandidate)) {
-    snapshot.ruleCandidate = value.ruleCandidate;
+  if (schemaVersion === CLOUD_SCHEMA_VERSION) {
+    if (typeof value.teacherUid !== "string") {
+      return null;
+    }
+
+    return {
+      ...snapshotWithCandidate,
+      schemaVersion: CLOUD_SCHEMA_VERSION,
+      teacherUid: value.teacherUid,
+    };
   }
 
-  return snapshot;
+  return {
+    ...snapshotWithCandidate,
+    schemaVersion: CLOUD_SCHEMA_VERSION_LEGACY,
+  };
 }
 
 export function parseCloudSubmissionPayload(value: unknown): CloudSubmissionPayload | null {
-  if (!isRecord(value) || value.app !== APP_ID || value.schemaVersion !== CLOUD_SCHEMA_VERSION) {
+  if (
+    !isRecord(value) ||
+    value.app !== APP_ID ||
+    value.schemaVersion !== CLOUD_SUBMISSION_SCHEMA_VERSION
+  ) {
     return null;
   }
 
@@ -206,7 +241,7 @@ export function parseCloudSubmissionPayload(value: unknown): CloudSubmissionPayl
 
   return {
     app: APP_ID,
-    schemaVersion: CLOUD_SCHEMA_VERSION,
+    schemaVersion: CLOUD_SUBMISSION_SCHEMA_VERSION,
     participationKey: value.participationKey,
     submittedAt: value.submittedAt,
     submission: value.submission,

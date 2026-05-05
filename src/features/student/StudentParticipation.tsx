@@ -1,6 +1,6 @@
 import { CheckCircle2, Send } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { CloudActivitySnapshot } from "../../domain/cloudParticipation";
+import type { ParsedCloudActivitySnapshot } from "../../domain/cloudParticipation";
 import {
   canAcceptSubmission,
   findStudentByNumber,
@@ -40,7 +40,7 @@ export function StudentParticipation({
   const [targetStudentId, setTargetStudentId] = useState(state.homeroomClass.students[0]?.studentId ?? "");
   const [voteChoice, setVoteChoice] = useState<"agree" | "needsRevision">("agree");
   const [message, setMessage] = useState("");
-  const [cloudSnapshot, setCloudSnapshot] = useState<CloudActivitySnapshot | null>(null);
+  const [cloudSnapshot, setCloudSnapshot] = useState<ParsedCloudActivitySnapshot | null>(null);
   const [cloudSubmissions, setCloudSubmissions] = useState<ParticipationSubmission[]>([]);
   const [isCloudLookupPending, setIsCloudLookupPending] = useState(false);
   const localActivity = useMemo(

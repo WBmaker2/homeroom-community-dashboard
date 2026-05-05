@@ -164,6 +164,7 @@ describe("cloud participation helpers", () => {
     expect("name" in snapshot.homeroomClass.students[0]!).toBe(false);
     expect("supportNotes" in snapshot.homeroomClass.students[0]!).toBe(false);
     expect(snapshot.ruleCandidate?.title).toBe(sampleRuleCandidates[0]?.title);
+    expect(snapshot.schemaVersion).toBe(2);
     expect(snapshot.teacherUid).toBe("uid-1a2b3c4d");
     expect("teacherEmail" in snapshot).toBe(false);
   });
@@ -192,6 +193,7 @@ describe("cloud participation helpers", () => {
     const parsed = parseCloudActivitySnapshot(publicPayload);
 
     expect(parsed?.teacherUid).toBe("uid-1a2b3c4d");
+    expect(parsed?.schemaVersion).toBe(2);
 
     expect(
       parseCloudActivitySnapshot({
@@ -199,6 +201,44 @@ describe("cloud participation helpers", () => {
         teacherUid: undefined,
       }),
     ).toBeNull();
+  });
+
+  it("parses legacy cloud activity payloads without teacherUid for student lookup", () => {
+    const legacyPayload = {
+      app: "homeroom-community-dashboard",
+      schemaVersion: 1,
+      teacherId: "T-K7Q2M9P4",
+      publishedAt: "2026-05-05T10:00:00.000Z",
+      homeroomClass: {
+        classId: sampleClass.classId,
+        name: sampleClass.name,
+        status: sampleClass.status,
+        students: sampleClass.students.map((student) => ({
+          studentId: student.studentId,
+          studentNumber: student.studentNumber,
+          displayName: student.displayName,
+        })),
+      },
+      activity: sampleActivities[0]!,
+      ruleCandidate: {
+        ruleCandidateId: sampleRuleCandidates[0]!.ruleCandidateId,
+        title: sampleRuleCandidates[0]!.title,
+        description: sampleRuleCandidates[0]!.description,
+        status: sampleRuleCandidates[0]!.status,
+        votes: sampleRuleCandidates[0]!.votes,
+      },
+    };
+
+    const parsed = parseCloudActivitySnapshot(legacyPayload);
+
+    expect(parsed?.schemaVersion).toBe(1);
+    expect(parsed?.teacherUid).toBeUndefined();
+    expect(parsed).toMatchObject({
+      app: "homeroom-community-dashboard",
+      schemaVersion: 1,
+      teacherId: "T-K7Q2M9P4",
+    });
+    expect((parsed as Record<string, unknown>)).not.toHaveProperty("teacherUid");
   });
 
   it("uses participation key for one-time cloud submissions and submission id for repeated submissions", () => {
