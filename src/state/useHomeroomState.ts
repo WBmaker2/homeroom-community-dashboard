@@ -636,40 +636,43 @@ export function useHomeroomState() {
       return;
     }
 
-    setActiveSubmissions((items) =>
-      items.filter((submission) => {
-        if (submission.submissionId !== submissionId) {
-          return true;
-        }
-
-        const matchedActivity = activeActivities.find(
-          (activity) => activity.activityId === submission.activityId,
-        );
-
-        if (
-          matchedActivity?.type === "ruleVote" &&
-          matchedActivity.targetId &&
-          (submission.choice === "agree" || submission.choice === "needsRevision")
-        ) {
-          const choice = submission.choice;
-          setActiveRuleCandidates((candidates) =>
-            candidates.map((candidate) =>
-              candidate.ruleCandidateId === matchedActivity.targetId
-                ? {
-                    ...candidate,
-                    votes: {
-                      ...candidate.votes,
-                      [choice]: Math.max(0, candidate.votes[choice] - 1),
-                    },
-                  }
-                : candidate,
-            ),
-          );
-        }
-
-        return false;
-      }),
+    const targetSubmission = activeSubmissions.find(
+      (submission) => submission.submissionId === submissionId,
     );
+
+    if (!targetSubmission) {
+      return;
+    }
+
+    const matchedActivity = activeActivities.find(
+      (activity) => activity.activityId === targetSubmission.activityId,
+    );
+
+    setActiveSubmissions((items) =>
+      items.filter((submission) => submission.submissionId !== submissionId),
+    );
+
+    if (
+      matchedActivity?.type === "ruleVote" &&
+      matchedActivity.targetId &&
+      (targetSubmission.choice === "agree" || targetSubmission.choice === "needsRevision")
+    ) {
+      const choice = targetSubmission.choice;
+
+      setActiveRuleCandidates((candidates) =>
+        candidates.map((candidate) =>
+          candidate.ruleCandidateId === matchedActivity.targetId
+            ? {
+                ...candidate,
+                votes: {
+                  ...candidate.votes,
+                  [choice]: Math.max(0, candidate.votes[choice] - 1),
+                },
+              }
+            : candidate,
+        ),
+      );
+    }
   }
 
   function downloadBackup() {

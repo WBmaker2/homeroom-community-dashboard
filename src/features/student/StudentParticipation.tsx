@@ -214,27 +214,25 @@ export function StudentParticipation({
           </div>
         ) : activity ? (
           <div className="participation-panel">
-              <div className="panel-heading">
-                <div>
-                  <h1>{activity.title}</h1>
-                  <p>{activity.isAnonymous ? "익명 참여" : "번호 확인 참여"}</p>
-                </div>
-                <span className="status-chip">
-                  {isClassArchived
-                    ? "보관 학급"
-                    : getActivityAvailabilityLabel(availability)}
-                </span>
+            <div className="panel-heading">
+              <div>
+                <h1>{activity.title}</h1>
+                <p>{activity.isAnonymous ? "익명 참여" : "번호 확인 참여"}</p>
               </div>
+              <span className="status-chip">
+                {isClassArchived ? "보관 학급" : getActivityAvailabilityLabel(availability)}
+              </span>
+            </div>
 
-              {isActivityUnavailable && !isClassArchived && (
-                <p className="archive-notice">
-                  {availability.kind === "notOpenYet"
-                    ? "이 활동은 아직 시작 전입니다."
-                    : isActivityUnavailable
-                      ? "이 활동은 종료되어 제출이 차단됩니다."
-                      : ""}
-                </p>
-              )}
+            {isActivityUnavailable && !isClassArchived && (
+              <p className="archive-notice">
+                {availability.kind === "notOpenYet"
+                  ? "이 활동은 아직 시작 전입니다."
+                  : isActivityUnavailable
+                    ? "이 활동은 종료되어 제출이 차단됩니다."
+                    : ""}
+              </p>
+            )}
 
             {isClassArchived && (
               <p className="archive-notice">
