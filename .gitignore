@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.worktrees/
 .playwright-mcp/
 .DS_Store
 *.tsbuildinfo
