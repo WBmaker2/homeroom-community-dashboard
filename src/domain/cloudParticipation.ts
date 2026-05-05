@@ -26,6 +26,7 @@ export type CloudActivitySnapshot = {
   app: typeof APP_ID;
   schemaVersion: typeof CLOUD_SCHEMA_VERSION;
   teacherId: string;
+  teacherUid: string;
   publishedAt: string;
   homeroomClass: CloudPublicClass;
   activity: ParticipationActivity;
@@ -48,6 +49,7 @@ export type SubmissionMergeResult = {
 
 export function createCloudActivitySnapshot(params: {
   teacherId: string;
+  teacherUid?: string;
   homeroomClass: HomeroomClass;
   activity: ParticipationActivity;
   ruleCandidates: RuleCandidate[];
@@ -64,6 +66,7 @@ export function createCloudActivitySnapshot(params: {
     app: APP_ID,
     schemaVersion: CLOUD_SCHEMA_VERSION,
     teacherId: params.teacherId,
+    teacherUid: params.teacherUid ?? params.teacherId,
     publishedAt: params.publishedAt,
     homeroomClass: {
       classId: params.homeroomClass.classId,
@@ -163,6 +166,7 @@ export function parseCloudActivitySnapshot(value: unknown): CloudActivitySnapsho
 
   if (
     typeof value.teacherId !== "string" ||
+    typeof value.teacherUid !== "string" ||
     typeof value.publishedAt !== "string" ||
     !isCloudPublicClass(value.homeroomClass) ||
     !isParticipationActivity(value.activity)
@@ -174,6 +178,7 @@ export function parseCloudActivitySnapshot(value: unknown): CloudActivitySnapsho
     app: APP_ID,
     schemaVersion: CLOUD_SCHEMA_VERSION,
     teacherId: value.teacherId,
+    teacherUid: value.teacherUid,
     publishedAt: value.publishedAt,
     homeroomClass: value.homeroomClass,
     activity: value.activity,

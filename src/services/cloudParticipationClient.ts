@@ -23,7 +23,10 @@ export type CloudParticipationConfig =
       apiKey?: string;
       collectionRoot: string;
       reason: string;
-    };
+  };
+
+export const CLOUD_ACTIVITY_AUTH_REQUIRED_ERROR = "cloud-activity-auth-token-required";
+export const CLOUD_SUBMISSION_AUTH_REQUIRED_ERROR = "cloud-submission-auth-token-required";
 
 type FirestoreValue =
   | { stringValue: string }
@@ -70,8 +73,12 @@ export function isCloudParticipationEnabled(): boolean {
   return getCloudParticipationConfig().enabled;
 }
 
-export async function publishCloudActivity(snapshot: CloudActivitySnapshot): Promise<void> {
+export async function publishCloudActivity(
+  snapshot: CloudActivitySnapshot,
+  idToken?: string,
+): Promise<void> {
   const config = requireCloudConfig();
+  const token = requireTeacherAuthToken(idToken, CLOUD_ACTIVITY_AUTH_REQUIRED_ERROR);
   const url = buildDocumentUrl(config, [config.collectionRoot, snapshot.activity.code]);
   const nowIso = new Date().toISOString();
 
@@ -80,12 +87,13 @@ export async function publishCloudActivity(snapshot: CloudActivitySnapshot): Pro
     schemaVersion: { integerValue: String(snapshot.schemaVersion) },
     code: { stringValue: snapshot.activity.code },
     teacherId: { stringValue: snapshot.teacherId },
+    teacherUid: { stringValue: snapshot.teacherUid },
     classId: { stringValue: snapshot.activity.classId },
     activityId: { stringValue: snapshot.activity.activityId },
     publishedAt: { timestampValue: snapshot.publishedAt },
     updatedAt: { timestampValue: nowIso },
     payload: { stringValue: JSON.stringify(snapshot) },
-  });
+  }, token);
 }
 
 export async function fetchCloudActivityByCode(
@@ -150,11 +158,23 @@ export async function submitCloudParticipation(params: {
 }
 
 export async function fetchCloudSubmissions(
-  activity: ParticipationActivity,
+  params: {
+    activity: ParticipationActivity;
+    idToken?: string;
+  } | ParticipationActivity,
 ): Promise<ParticipationSubmission[]> {
   const config = requireCloudConfig();
+  const activity = "activity" in params ? params.activity : params;
+  const idToken = requireTeacherAuthToken(
+    "activity" in params ? params.idToken : undefined,
+    CLOUD_SUBMISSION_AUTH_REQUIRED_ERROR,
+  );
   const url = buildDocumentUrl(config, [config.collectionRoot, activity.code, "submissions"]);
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+  });
 
   if (response.status === 404) {
     return [];
@@ -182,8 +202,13 @@ export async function fetchCloudSubmissions(
 export async function deleteCloudSubmission(params: {
   activity: ParticipationActivity;
   submission: ParticipationSubmission;
+  idToken?: string;
 }): Promise<void> {
   const config = getCloudParticipationConfig();
+  const idToken = requireTeacherAuthToken(
+    params.idToken,
+    CLOUD_SUBMISSION_AUTH_REQUIRED_ERROR,
+  );
 
   if (!config.enabled) {
     return;
@@ -196,7 +221,12 @@ export async function deleteCloudSubmission(params: {
     "submissions",
     documentId,
   ]);
-  const response = await fetch(url, { method: "DELETE" });
+  const response = await fetch(url, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+  });
 
   if (!response.ok && response.status !== 404) {
     throw new Error("cloud-submission-delete-failed");
@@ -226,11 +256,13 @@ function buildDocumentUrl(
 async function writeFirestoreDocument(
   url: string,
   fields: Record<string, FirestoreValue>,
+  idToken?: string,
 ): Promise<void> {
   const response = await fetch(url, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
+      ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
     },
     body: JSON.stringify({ fields }),
   });
@@ -238,6 +270,14 @@ async function writeFirestoreDocument(
   if (!response.ok) {
     throw new Error("cloud-document-write-failed");
   }
+}
+
+function requireTeacherAuthToken(idToken: string | undefined, errorMessage: string): string {
+  if (!idToken || idToken.trim().length === 0) {
+    throw new Error(errorMessage);
+  }
+
+  return idToken;
 }
 
 function getStringField(document: FirestoreDocument, fieldName: string): string | null {

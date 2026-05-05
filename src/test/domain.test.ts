@@ -25,6 +25,7 @@ import {
 import {
   createCloudActivitySnapshot,
   getCloudSubmissionDocumentId,
+  parseCloudActivitySnapshot,
   mergeParticipationSubmissions,
 } from "../domain/cloudParticipation";
 import { computeDashboardSignals } from "../domain/dashboardSignals";
@@ -148,6 +149,7 @@ describe("cloud participation helpers", () => {
   it("publishes only the student fields needed for participation", () => {
     const snapshot = createCloudActivitySnapshot({
       teacherId: "T-K7Q2M9P4",
+      teacherUid: "uid-1a2b3c4d",
       homeroomClass: sampleClass,
       activity: sampleActivities[0]!,
       ruleCandidates: sampleRuleCandidates,
@@ -162,6 +164,30 @@ describe("cloud participation helpers", () => {
     expect("name" in snapshot.homeroomClass.students[0]!).toBe(false);
     expect("supportNotes" in snapshot.homeroomClass.students[0]!).toBe(false);
     expect(snapshot.ruleCandidate?.title).toBe(sampleRuleCandidates[0]?.title);
+    expect(snapshot.teacherUid).toBe("uid-1a2b3c4d");
+    expect("teacherEmail" in snapshot).toBe(false);
+  });
+
+  it("parses only cloud activity payloads with teacherUid", () => {
+    const snapshot = createCloudActivitySnapshot({
+      teacherId: "T-K7Q2M9P4",
+      teacherUid: "uid-1a2b3c4d",
+      homeroomClass: sampleClass,
+      activity: sampleActivities[0]!,
+      ruleCandidates: sampleRuleCandidates,
+      publishedAt: "2026-05-05T10:00:00.000Z",
+    });
+    const publicPayload = JSON.parse(JSON.stringify(snapshot));
+    const parsed = parseCloudActivitySnapshot(publicPayload);
+
+    expect(parsed?.teacherUid).toBe("uid-1a2b3c4d");
+
+    expect(
+      parseCloudActivitySnapshot({
+        ...publicPayload,
+        teacherUid: undefined,
+      }),
+    ).toBeNull();
   });
 
   it("uses participation key for one-time cloud submissions and submission id for repeated submissions", () => {
