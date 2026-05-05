@@ -18,6 +18,7 @@ service cloud.firestore {
       return isOwnerAwareHomeroomActivity(request.resource.data)
         && request.resource.data.code == code
         && request.resource.data.teacherUid is string
+        && request.resource.data.teacherUid == request.auth.uid
         && request.resource.data.teacherId is string
         && request.resource.data.classId is string
         && request.resource.data.activityId is string
@@ -35,6 +36,14 @@ service cloud.firestore {
         && request.resource.data.studentId is string
         && request.resource.data.participationKey is string
         && request.resource.data.payload is string;
+    }
+
+    function isSubmissionForParentActivity(code) {
+      let parent = get(/databases/$(database)/documents/homeroomPublicActivities/$(code));
+
+      return isHomeroomActivity(parent.data)
+        && request.resource.data.classId == parent.data.classId
+        && request.resource.data.activityId == parent.data.activityId;
     }
 
     function isHomeroomActivityOwnerByCode(code) {
@@ -57,7 +66,7 @@ service cloud.firestore {
 
       match /submissions/{submissionId} {
         allow read: if request.auth != null && isHomeroomActivityOwnerByCode(code);
-        allow create: if isSubmissionCreate();
+        allow create: if isSubmissionCreate() && isSubmissionForParentActivity(code);
         allow update: if false;
         allow delete: if request.auth != null && isHomeroomActivityOwnerByCode(code);
       }

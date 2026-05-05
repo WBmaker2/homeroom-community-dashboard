@@ -33,7 +33,10 @@ describe("firestore cloud activity rules", () => {
   });
 
   it("requires authenticated owner-aware schema for cloud activity create/update/delete", () => {
-    expectToContainRule(rulesSource, "allow create: if request.auth != null && isHomeroomActivityWrite(code);");
+    expectToContainRule(
+      rulesSource,
+      "allow create: if request.auth != null && isHomeroomActivityWrite(code);",
+    );
     expectToContainRule(
       rulesSource,
       "allow update: if request.auth != null && isHomeroomActivityWrite(code)",
@@ -52,7 +55,14 @@ describe("firestore cloud activity rules", () => {
   });
 
   it("keeps submission create public and restricts read/delete to parent owner", () => {
-    expectToContainRule(rulesSource, "allow create: if isSubmissionCreate();");
+    expectToContainRule(
+      rulesSource,
+      "allow create: if isSubmissionCreate() && isSubmissionForParentActivity(code);",
+    );
+    expectToContainRule(
+      rulesSource,
+      "return isHomeroomActivity(parent.data) && request.resource.data.classId == parent.data.classId && request.resource.data.activityId == parent.data.activityId;",
+    );
     expectToContainRule(
       rulesSource,
       "allow read: if request.auth != null && isHomeroomActivityOwnerByCode(code);",
