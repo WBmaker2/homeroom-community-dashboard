@@ -9,6 +9,7 @@ import {
   isTeacherAuthEnabled,
   readStoredTeacherSession,
   refreshTeacherSession,
+  signOutTeacherSession,
   saveTeacherSession,
   signInTeacherWithEmail,
 } from "../services/firebaseTeacherAuth";
@@ -218,6 +219,56 @@ describe("firebase teacher auth service", () => {
     expect(readStoredTeacherSession(storage)).toBeNull();
   });
 
+  it("does not clear stored refresh token when refresh is transiently failing", async () => {
+    const storage = createMemoryStorage();
+    const fixedNow = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(fixedNow);
+    saveTeacherSession(
+      {
+        teacherUid: "teacher-uid",
+        email: "teacher@example.com",
+        idToken: "old-id-token",
+        refreshToken: "old-refresh",
+        expiresAt: fixedNow - 1_000,
+      },
+      storage,
+    );
+    vi.mocked(globalThis.fetch).mockRejectedValue(new Error("network error"));
+
+    const session = await getValidTeacherSession(storage);
+
+    expect(session).toBeNull();
+    expect(readStoredTeacherSession(storage)).toMatchObject({
+      teacherUid: "teacher-uid",
+      refreshToken: "old-refresh",
+    });
+  });
+
+  it("does not clear stored refresh token when refresh response cannot be parsed", async () => {
+    const storage = createMemoryStorage();
+    const fixedNow = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(fixedNow);
+    saveTeacherSession(
+      {
+        teacherUid: "teacher-uid",
+        email: "teacher@example.com",
+        idToken: "old-id-token",
+        refreshToken: "old-refresh",
+        expiresAt: fixedNow - 1_000,
+      },
+      storage,
+    );
+    vi.mocked(globalThis.fetch).mockResolvedValue(new Response("not-json", { status: 200 }));
+
+    const session = await getValidTeacherSession(storage);
+
+    expect(session).toBeNull();
+    expect(readStoredTeacherSession(storage)).toMatchObject({
+      teacherUid: "teacher-uid",
+      refreshToken: "old-refresh",
+    });
+  });
+
   it("fails stable on sign-in when config is disabled", async () => {
     vi.stubEnv("VITE_FIREBASE_API_KEY", "");
     await expect(signInTeacherWithEmail("teacher@example.com", "password")).rejects.toThrow(
@@ -227,6 +278,32 @@ describe("firebase teacher auth service", () => {
 
   it("fails stable on refresh when endpoint returns error", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(new Response("{}", { status: 400 }));
+    await expect(
+      refreshTeacherSession({
+        teacherUid: "teacher-uid",
+        email: "teacher@example.com",
+        idToken: "id-token",
+        refreshToken: "refresh-token",
+        expiresAt: Date.now() - 1000,
+      }),
+    ).rejects.toThrow(TEACHER_SESSION_REFRESH_ERROR);
+  });
+
+  it("throws stable refresh error when fetch rejects", async () => {
+    vi.mocked(globalThis.fetch).mockRejectedValue(new Error("network error"));
+    await expect(
+      refreshTeacherSession({
+        teacherUid: "teacher-uid",
+        email: "teacher@example.com",
+        idToken: "id-token",
+        refreshToken: "refresh-token",
+        expiresAt: Date.now() - 1000,
+      }),
+    ).rejects.toThrow(TEACHER_SESSION_REFRESH_ERROR);
+  });
+
+  it("throws stable refresh error when response is invalid JSON", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(new Response("not-json", { status: 200 }));
     await expect(
       refreshTeacherSession({
         teacherUid: "teacher-uid",
@@ -249,6 +326,21 @@ describe("firebase teacher auth service", () => {
     }));
 
     clearTeacherSession(storage);
+
+    expect(readStoredTeacherSession(storage)).toBeNull();
+  });
+
+  it("clears session on explicit signOutTeacherSession wrapper", () => {
+    const storage = createMemoryStorage();
+    storage.setItem(TEACHER_SESSION_STORAGE_KEY, JSON.stringify({
+      teacherUid: "teacher-uid",
+      email: "teacher@example.com",
+      idToken: "id-token",
+      refreshToken: "refresh-token",
+      expiresAt: Date.now() + 1000,
+    }));
+
+    signOutTeacherSession(storage);
 
     expect(readStoredTeacherSession(storage)).toBeNull();
   });

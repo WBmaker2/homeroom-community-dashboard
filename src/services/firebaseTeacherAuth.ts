@@ -5,11 +5,7 @@ export const TEACHER_AUTH_CONFIG_DISABLED_REASON =
 export const TEACHER_SIGN_IN_ERROR = "teacher-signin-failed";
 export const TEACHER_SESSION_REFRESH_ERROR = "teacher-session-refresh-failed";
 
-const IDENTITY_TOOLKIT_BASE_URL =
-  "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword";
-const SECURE_TOKEN_BASE_URL = "https://securetoken.googleapis.com/v1/token";
-
-type BrowserStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+export type TeacherSessionRefreshFailureKind = "terminal" | "transient";
 
 export type TeacherSession = {
   teacherUid: string;
@@ -18,6 +14,17 @@ export type TeacherSession = {
   refreshToken: string;
   expiresAt: number;
 };
+
+export class TeacherSessionRefreshError extends Error {
+  public readonly kind: TeacherSessionRefreshFailureKind;
+
+  constructor(kind: TeacherSessionRefreshFailureKind) {
+    super(TEACHER_SESSION_REFRESH_ERROR);
+    this.kind = kind;
+  }
+}
+
+type BrowserStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 export type TeacherAuthConfig =
   | {
@@ -46,6 +53,10 @@ type RefreshResponse = {
   refresh_token?: unknown;
   expires_in?: unknown;
 };
+
+const IDENTITY_TOOLKIT_BASE_URL =
+  "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword";
+const SECURE_TOKEN_BASE_URL = "https://securetoken.googleapis.com/v1/token";
 
 export function getTeacherAuthConfig(): TeacherAuthConfig {
   const env = import.meta.env;
@@ -77,10 +88,11 @@ export async function signInTeacherWithEmail(
   password: string,
 ): Promise<TeacherSession> {
   const config = requireTeacherAuthConfig();
+  const url = buildApiUrl(IDENTITY_TOOLKIT_BASE_URL, config.apiKey);
   let payload: SignInResponse;
 
   try {
-    const response = await fetch(`${IDENTITY_TOOLKIT_BASE_URL}?key=${config.apiKey}`, {
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -111,26 +123,40 @@ export async function signInTeacherWithEmail(
 
 export async function refreshTeacherSession(session: TeacherSession): Promise<TeacherSession> {
   const config = requireTeacherAuthConfig();
-  const response = await fetch(`${SECURE_TOKEN_BASE_URL}?key=${config.apiKey}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: session.refreshToken,
-    }).toString(),
-  });
+  const url = buildApiUrl(SECURE_TOKEN_BASE_URL, config.apiKey);
 
-  if (!response.ok) {
-    throw new Error(TEACHER_SESSION_REFRESH_ERROR);
+  let response: Response;
+  let payload: RefreshResponse;
+
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: session.refreshToken,
+      }).toString(),
+    });
+  } catch {
+    throw new TeacherSessionRefreshError("transient");
   }
 
-  const payload = (await response.json()) as RefreshResponse;
+  if (!response.ok) {
+    throw new TeacherSessionRefreshError("terminal");
+  }
+
+  try {
+    payload = (await response.json()) as RefreshResponse;
+  } catch {
+    throw new TeacherSessionRefreshError("transient");
+  }
+
   const nextSession = mapRefreshSession(payload, session.email);
 
   if (!nextSession) {
-    throw new Error(TEACHER_SESSION_REFRESH_ERROR);
+    throw new TeacherSessionRefreshError("terminal");
   }
 
   return nextSession;
@@ -138,28 +164,32 @@ export async function refreshTeacherSession(session: TeacherSession): Promise<Te
 
 export function saveTeacherSession(
   session: TeacherSession,
-  storage: BrowserStorage | undefined = defaultStorage(),
+  storage: BrowserStorage | undefined = undefined,
 ): void {
+  const resolvedStorage = resolveStorage(storage);
   try {
-    storage?.setItem(TEACHER_SESSION_STORAGE_KEY, JSON.stringify(session));
+    resolvedStorage?.setItem(TEACHER_SESSION_STORAGE_KEY, JSON.stringify(session));
   } catch {
     // localStorage may be unavailable in private or restricted browser contexts.
   }
 }
 
-export function clearTeacherSession(storage: BrowserStorage | undefined = defaultStorage()): void {
+export function clearTeacherSession(storage: BrowserStorage | undefined = undefined): void {
+  const resolvedStorage = resolveStorage(storage);
   try {
-    storage?.removeItem(TEACHER_SESSION_STORAGE_KEY);
+    resolvedStorage?.removeItem(TEACHER_SESSION_STORAGE_KEY);
   } catch {
     // localStorage may be unavailable in private or restricted browser contexts.
   }
 }
 
 export function readStoredTeacherSession(
-  storage: BrowserStorage | undefined = defaultStorage(),
+  storage: BrowserStorage | undefined = undefined,
 ): TeacherSession | null {
+  const resolvedStorage = resolveStorage(storage);
+
   try {
-    const stored = storage?.getItem(TEACHER_SESSION_STORAGE_KEY);
+    const stored = resolvedStorage?.getItem(TEACHER_SESSION_STORAGE_KEY);
     if (!stored) {
       return null;
     }
@@ -171,9 +201,10 @@ export function readStoredTeacherSession(
 }
 
 export async function getValidTeacherSession(
-  storage: BrowserStorage | undefined = defaultStorage(),
+  storage: BrowserStorage | undefined = undefined,
 ): Promise<TeacherSession | null> {
-  const session = readStoredTeacherSession(storage);
+  const resolvedStorage = resolveStorage(storage);
+  const session = readStoredTeacherSession(resolvedStorage);
 
   if (!session) {
     return null;
@@ -185,16 +216,22 @@ export async function getValidTeacherSession(
 
   try {
     const nextSession = await refreshTeacherSession(session);
-    saveTeacherSession(nextSession, storage);
+    saveTeacherSession(nextSession, resolvedStorage);
 
     return nextSession;
-  } catch {
-    clearTeacherSession(storage);
+  } catch (error) {
+    if (
+      error instanceof TeacherSessionRefreshError &&
+      error.kind === "terminal"
+    ) {
+      clearTeacherSession(resolvedStorage);
+    }
+
     return null;
   }
 }
 
-export function signOutTeacherSession(storage: BrowserStorage | undefined = defaultStorage()): void {
+export function signOutTeacherSession(storage: BrowserStorage | undefined = undefined): void {
   clearTeacherSession(storage);
 }
 
@@ -228,6 +265,7 @@ function mapSignInSession(payload: SignInResponse): TeacherSession | null {
   const idToken = asString(payload.idToken);
   const refreshToken = asString(payload.refreshToken);
   const expiresIn = parsePositiveNumber(payload.expiresIn);
+
   if (!teacherUid || !email || !idToken || !refreshToken || expiresIn === null) {
     return null;
   }
@@ -276,10 +314,7 @@ function isTeacherSession(value: unknown): value is TeacherSession {
 function parsePositiveNumber(value: unknown): number | null {
   const parsed = Number(value);
 
-  if (!Number.isFinite(parsed)) {
-    return null;
-  }
-  if (parsed <= 0) {
+  if (!Number.isFinite(parsed) || parsed <= 0) {
     return null;
   }
 
@@ -302,6 +337,25 @@ function trimEnvValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
-function defaultStorage(): BrowserStorage | undefined {
-  return typeof window === "undefined" ? undefined : window.localStorage;
+function buildApiUrl(baseUrl: string, apiKey: string): string {
+  const url = new URL(baseUrl);
+  url.searchParams.set("key", apiKey);
+
+  return url.toString();
+}
+
+function resolveStorage(storage: BrowserStorage | undefined): BrowserStorage | undefined {
+  if (storage) {
+    return storage;
+  }
+
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
 }
