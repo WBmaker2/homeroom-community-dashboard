@@ -9,7 +9,7 @@ import {
 import type { HomeroomActions, HomeroomState } from "../../../state/useHomeroomState";
 import {
   getTeacherAuthConfig,
-  getValidTeacherSession,
+  getTeacherSessionForCloudRequest,
   saveTeacherSession,
   signInTeacherWithEmail,
   signOutTeacherSession,
@@ -58,10 +58,22 @@ export function ActivityOperationsView({
     let mounted = true;
 
     const refreshSession = async () => {
-      const session = await getValidTeacherSession();
+      const { sessionForDisplay, sessionForCloudRequest, transientFailure } =
+        await getTeacherSessionForCloudRequest();
 
       if (mounted) {
-        setTeacherSession(session);
+        setTeacherSession(sessionForDisplay);
+      }
+
+      if (
+        mounted &&
+        sessionForCloudRequest === null &&
+        transientFailure &&
+        sessionForDisplay
+      ) {
+        setOperationMessage(
+          "토큰 갱신이 일시적으로 실패해 동기화가 잠시 지연됩니다. 다시 시도해 주세요.",
+        );
       }
     };
 
@@ -73,10 +85,21 @@ export function ActivityOperationsView({
   }, []);
 
   async function getFreshTeacherSession() {
-    const session = await getValidTeacherSession();
-    setTeacherSession(session);
+    const result = await getTeacherSessionForCloudRequest();
+    setTeacherSession(result.sessionForDisplay);
 
-    return session;
+    if (!result.sessionForCloudRequest) {
+      if (result.transientFailure && result.sessionForDisplay) {
+        setOperationMessage(
+          "교사 토큰 갱신이 일시적으로 실패했습니다. 잠시 후 다시 시도해 주세요.",
+        );
+      } else {
+        setOperationMessage("클라우드 동기화는 교사 로그인 후에만 사용 가능합니다.");
+      }
+      return null;
+    }
+
+    return result.sessionForCloudRequest;
   }
 
   async function signInTeacher() {
@@ -168,15 +191,14 @@ export function ActivityOperationsView({
       return;
     }
 
-    const session = await getFreshTeacherSession();
-    if (!session) {
-      setOperationMessage("클라우드 동기화는 교사 로그인 후에만 사용 가능합니다.");
-      return;
-    }
-
     setIsCloudBusy(true);
 
     try {
+      const session = await getFreshTeacherSession();
+      if (!session) {
+        return;
+      }
+
       await publishCloudActivity(
         createCloudActivitySnapshot({
           teacherId: state.teacherId,
@@ -201,15 +223,14 @@ export function ActivityOperationsView({
       return;
     }
 
-    const session = await getFreshTeacherSession();
-    if (!session) {
-      setOperationMessage("클라우드 동기화는 교사 로그인 후에만 사용 가능합니다.");
-      return;
-    }
-
     setIsCloudBusy(true);
 
     try {
+      const session = await getFreshTeacherSession();
+      if (!session) {
+        return;
+      }
+
       const cloudSubmissions = await fetchCloudSubmissions({
         activity: selectedActivity,
         idToken: session.idToken,
@@ -240,13 +261,14 @@ export function ActivityOperationsView({
       return;
     }
 
-    const session = await getFreshTeacherSession();
-    if (!session) {
-      setOperationMessage("클라우드 동기화는 교사 로그인 후에만 사용 가능합니다.");
-      return;
-    }
+    setIsCloudBusy(true);
 
     try {
+      const session = await getFreshTeacherSession();
+      if (!session) {
+        return;
+      }
+
       await deleteCloudSubmission({
         activity: selectedActivity,
         submission: targetSubmission,
@@ -255,6 +277,8 @@ export function ActivityOperationsView({
     } catch {
       setOperationMessage("클라우드 제출 삭제에 실패했습니다. 잠시 후 다시 시도해 주세요.");
       return;
+    } finally {
+      setIsCloudBusy(false);
     }
 
     actions.deleteSubmission(submissionId);

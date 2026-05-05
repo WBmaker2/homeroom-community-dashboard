@@ -964,6 +964,124 @@ describe("homeroom app workflows", () => {
     );
   });
 
+  it("publishes selected activity with teacher auth token and top-level teacherUid", async () => {
+    const user = userEvent.setup();
+    const activityCode = "CLOUD-PUB-0001";
+
+    vi.stubEnv("VITE_FIREBASE_PROJECT_ID", "homeroom-test-project");
+    vi.stubEnv("VITE_FIREBASE_API_KEY", "api-key-123");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+
+    window.localStorage.setItem(
+      TEACHER_SESSION_STORAGE_KEY,
+      JSON.stringify({
+        teacherUid: "teacher-uid-001",
+        email: "teacher@example.com",
+        idToken: "id-token-001",
+        refreshToken: "refresh-token-001",
+        expiresAt: Date.now() + 3_600_000,
+      }),
+    );
+    unlockTeacherSession();
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      serializeSnapshot(
+        createSnapshotPayload({
+          snapshot: createOperationsSnapshot({
+            code: activityCode,
+            type: "agendaSubmission",
+            isAnonymous: false,
+            allowMultipleSubmissions: true,
+            opensAt: "2026-05-03T09:00:00+09:00",
+            closesAt: "2026-05-03T18:00:00+09:00",
+          }),
+          savedAt: "2026-05-03T09:00:00.000Z",
+        }),
+      ),
+    );
+
+    renderAt("/teacher");
+    await user.click(screen.getByRole("button", { name: "활동 운영" }));
+    await user.click(getActivityRowButton(activityCode));
+    await user.click(screen.getByRole("button", { name: "선택 활동 게시" }));
+
+    await waitFor(() => {
+      const [requestUrl, requestOptions] = vi.mocked(globalThis.fetch).mock.calls[0] ?? [];
+      expect(requestUrl).toBe(
+        "https://firestore.googleapis.com/v1/projects/homeroom-test-project/databases/(default)/documents/homeroomPublicActivities/CLOUD-PUB-0001?key=api-key-123",
+      );
+      expect(requestOptions?.method).toBe("PATCH");
+      expect(requestOptions?.headers).toMatchObject({
+        "Content-Type": "application/json",
+        Authorization: "Bearer id-token-001",
+      });
+
+      const requestPayload = JSON.parse((requestOptions as { body?: string }).body as string);
+      expect(requestPayload.fields.teacherUid.stringValue).toBe("teacher-uid-001");
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("status").textContent).toContain(`${activityCode} 활동을 클라우드에 게시했습니다.`);
+    });
+  });
+
+  it("keeps teacher session visible when token refresh fails transiently and shows retry-ready warning", async () => {
+    const user = userEvent.setup();
+    const activityCode = "CLOUD-TRANSIENT-REFRESH-0001";
+
+    vi.stubEnv("VITE_FIREBASE_PROJECT_ID", "homeroom-test-project");
+    vi.stubEnv("VITE_FIREBASE_API_KEY", "api-key-123");
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network error"));
+
+    window.localStorage.setItem(
+      TEACHER_SESSION_STORAGE_KEY,
+      JSON.stringify({
+        teacherUid: "teacher-uid-001",
+        email: "teacher@example.com",
+        idToken: "id-token-001",
+        refreshToken: "refresh-token-001",
+        expiresAt: 1_700_000_000_000 - 1_000,
+      }),
+    );
+    unlockTeacherSession();
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      serializeSnapshot(
+        createSnapshotPayload({
+          snapshot: createOperationsSnapshot({
+            code: activityCode,
+            type: "agendaSubmission",
+            isAnonymous: false,
+            allowMultipleSubmissions: true,
+            opensAt: "2026-05-03T09:00:00+09:00",
+            closesAt: "2026-05-03T18:00:00+09:00",
+          }),
+          savedAt: "2026-05-03T09:00:00.000Z",
+        }),
+      ),
+    );
+
+    renderAt("/teacher");
+    await user.click(screen.getByRole("button", { name: "활동 운영" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "로그아웃" })).toBeInTheDocument();
+      expect(screen.getByText("로그인: teacher@example.com")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "교사 로그인" })).not.toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "선택 활동 게시" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "교사 토큰 갱신이 일시적으로 실패했습니다. 잠시 후 다시 시도해 주세요.",
+      );
+    });
+
+    expect(screen.getByRole("button", { name: "선택 활동 게시" })).toBeEnabled();
+  });
+
   it("logs out teacher session and returns to login form", async () => {
     const user = userEvent.setup();
 

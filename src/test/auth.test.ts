@@ -5,6 +5,7 @@ import {
   TEACHER_SESSION_REFRESH_ERROR,
   TEACHER_SESSION_STORAGE_KEY,
   clearTeacherSession,
+  getTeacherSessionForCloudRequest,
   getValidTeacherSession,
   isTeacherAuthEnabled,
   readStoredTeacherSession,
@@ -227,6 +228,32 @@ describe("firebase teacher auth service", () => {
     expect(readStoredTeacherSession(storage)).toBeNull();
   });
 
+  it("does not preserve stale session when terminal refresh fails", async () => {
+    const storage = createMemoryStorage();
+    const fixedNow = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(fixedNow);
+    saveTeacherSession(
+      {
+        teacherUid: "teacher-uid",
+        email: "teacher@example.com",
+        idToken: "old-id-token",
+        refreshToken: "old-refresh",
+        expiresAt: fixedNow - 1_000,
+      },
+      storage,
+    );
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(JSON.stringify({ error: { message: "INVALID_GRANT" } }), { status: 400 }),
+    );
+
+    const result = await getTeacherSessionForCloudRequest(storage);
+
+    expect(result.sessionForCloudRequest).toBeNull();
+    expect(result.sessionForDisplay).toBeNull();
+    expect(result.transientFailure).toBe(false);
+    expect(readStoredTeacherSession(storage)).toBeNull();
+  });
+
   it("does not clear stored refresh token when refresh is transiently failing", async () => {
     const storage = createMemoryStorage();
     const fixedNow = 1_700_000_000_000;
@@ -246,6 +273,37 @@ describe("firebase teacher auth service", () => {
     const session = await getValidTeacherSession(storage);
 
     expect(session).toBeNull();
+    expect(readStoredTeacherSession(storage)).toMatchObject({
+      teacherUid: "teacher-uid",
+      refreshToken: "old-refresh",
+    });
+  });
+
+  it("keeps session for UI and reports transient failure for cloud request", async () => {
+    const storage = createMemoryStorage();
+    const fixedNow = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(fixedNow);
+    saveTeacherSession(
+      {
+        teacherUid: "teacher-uid",
+        email: "teacher@example.com",
+        idToken: "old-id-token",
+        refreshToken: "old-refresh",
+        expiresAt: fixedNow - 1_000,
+      },
+      storage,
+    );
+    vi.mocked(globalThis.fetch).mockRejectedValue(new Error("network error"));
+
+    const result = await getTeacherSessionForCloudRequest(storage);
+
+    expect(result.sessionForCloudRequest).toBeNull();
+    expect(result.sessionForDisplay).toMatchObject({
+      teacherUid: "teacher-uid",
+      email: "teacher@example.com",
+      refreshToken: "old-refresh",
+    });
+    expect(result.transientFailure).toBe(true);
     expect(readStoredTeacherSession(storage)).toMatchObject({
       teacherUid: "teacher-uid",
       refreshToken: "old-refresh",

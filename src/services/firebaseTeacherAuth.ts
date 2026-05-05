@@ -7,6 +7,12 @@ export const TEACHER_SESSION_REFRESH_ERROR = "teacher-session-refresh-failed";
 
 export type TeacherSessionRefreshFailureKind = "terminal" | "transient";
 
+export type TeacherSessionLookupResult = {
+  sessionForCloudRequest: TeacherSession | null;
+  sessionForDisplay: TeacherSession | null;
+  transientFailure: boolean;
+};
+
 export type TeacherSession = {
   teacherUid: string;
   email: string;
@@ -212,31 +218,60 @@ export function readStoredTeacherSession(
 export async function getValidTeacherSession(
   storage: BrowserStorage | undefined = undefined,
 ): Promise<TeacherSession | null> {
+  const result = await getTeacherSessionForCloudRequest(storage);
+
+  return result.sessionForCloudRequest;
+}
+
+export async function getTeacherSessionForCloudRequest(
+  storage: BrowserStorage | undefined = undefined,
+): Promise<TeacherSessionLookupResult> {
   const resolvedStorage = resolveStorage(storage);
   const session = readStoredTeacherSession(resolvedStorage);
 
   if (!session) {
-    return null;
+    return {
+      sessionForCloudRequest: null,
+      sessionForDisplay: null,
+      transientFailure: false,
+    };
   }
 
   if (session.expiresAt - Date.now() > 60_000) {
-    return session;
+    return {
+      sessionForCloudRequest: session,
+      sessionForDisplay: session,
+      transientFailure: false,
+    };
   }
 
   try {
     const nextSession = await refreshTeacherSession(session);
     saveTeacherSession(nextSession, resolvedStorage);
 
-    return nextSession;
+    return {
+      sessionForCloudRequest: nextSession,
+      sessionForDisplay: nextSession,
+      transientFailure: false,
+    };
   } catch (error) {
     if (
       error instanceof TeacherSessionRefreshError &&
       error.kind === "terminal"
     ) {
       clearTeacherSession(resolvedStorage);
+      return {
+        sessionForCloudRequest: null,
+        sessionForDisplay: null,
+        transientFailure: false,
+      };
     }
 
-    return null;
+    return {
+      sessionForCloudRequest: null,
+      sessionForDisplay: session,
+      transientFailure: true,
+    };
   }
 }
 
