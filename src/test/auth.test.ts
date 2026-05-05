@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   TEACHER_AUTH_CONFIG_DISABLED_REASON,
+  TEACHER_SIGN_IN_ERROR,
   TEACHER_SESSION_REFRESH_ERROR,
   TEACHER_SESSION_STORAGE_KEY,
   clearTeacherSession,
@@ -46,6 +47,12 @@ describe("firebase teacher auth service", () => {
     expect(TEACHER_AUTH_CONFIG_DISABLED_REASON).toBeTruthy();
   });
 
+  it("enables auth when API key is present even without projectId", () => {
+    vi.stubEnv("VITE_FIREBASE_PROJECT_ID", "");
+
+    expect(isTeacherAuthEnabled()).toBe(true);
+  });
+
   it("signs in teacher by Firebase REST and maps response fields", async () => {
     const fixedNow = 1_700_000_000_000;
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(fixedNow);
@@ -77,6 +84,22 @@ describe("firebase teacher auth service", () => {
       }),
     );
     nowSpy.mockRestore();
+  });
+
+  it("throws stable sign-in error when fetch rejects", async () => {
+    vi.mocked(globalThis.fetch).mockRejectedValue(new Error("network error"));
+
+    await expect(signInTeacherWithEmail("teacher@example.com", "password123")).rejects.toThrow(
+      TEACHER_SIGN_IN_ERROR,
+    );
+  });
+
+  it("throws stable sign-in error when response is invalid JSON", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(new Response("not-json", { status: 200 }));
+
+    await expect(signInTeacherWithEmail("teacher@example.com", "password123")).rejects.toThrow(
+      TEACHER_SIGN_IN_ERROR,
+    );
   });
 
   it("validates stored session shape and discards invalid data", () => {

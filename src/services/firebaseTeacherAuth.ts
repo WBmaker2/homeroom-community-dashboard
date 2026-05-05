@@ -52,7 +52,7 @@ export function getTeacherAuthConfig(): TeacherAuthConfig {
   const projectId = trimEnvValue(env.VITE_FIREBASE_PROJECT_ID);
   const apiKey = trimEnvValue(env.VITE_FIREBASE_API_KEY);
 
-  if (!projectId || !apiKey) {
+  if (!apiKey) {
     return {
       enabled: false,
       projectId,
@@ -63,7 +63,7 @@ export function getTeacherAuthConfig(): TeacherAuthConfig {
 
   return {
     enabled: true,
-    projectId,
+    projectId: projectId ?? "",
     apiKey,
   };
 }
@@ -77,19 +77,29 @@ export async function signInTeacherWithEmail(
   password: string,
 ): Promise<TeacherSession> {
   const config = requireTeacherAuthConfig();
-  const response = await fetch(`${IDENTITY_TOOLKIT_BASE_URL}?key=${config.apiKey}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ email, password, returnSecureToken: true }),
-  });
+  let payload: SignInResponse;
 
-  if (!response.ok) {
+  try {
+    const response = await fetch(`${IDENTITY_TOOLKIT_BASE_URL}?key=${config.apiKey}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email, password, returnSecureToken: true }),
+    });
+
+    if (!response.ok) {
+      throw new Error(TEACHER_SIGN_IN_ERROR);
+    }
+
+    payload = (await response.json()) as SignInResponse;
+  } catch (error) {
+    if (error instanceof Error && error.message === TEACHER_AUTH_CONFIG_DISABLED_REASON) {
+      throw error;
+    }
     throw new Error(TEACHER_SIGN_IN_ERROR);
   }
 
-  const payload = (await response.json()) as SignInResponse;
   const session = mapSignInSession(payload);
 
   if (!session) {
