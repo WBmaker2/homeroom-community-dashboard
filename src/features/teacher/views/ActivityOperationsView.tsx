@@ -1,6 +1,10 @@
 import { ActivitySquare, Copy, Pause, Play, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createAbsoluteAppUrl } from "../../../domain/appRoutes";
+import {
+  getActivityAvailability,
+  getActivityAvailabilityLabel,
+} from "../../../domain/participation";
 import type { HomeroomActions, HomeroomState } from "../../../state/useHomeroomState";
 
 type ActivityOperationsViewProps = {
@@ -95,6 +99,11 @@ export function ActivityOperationsView({
               const submissionCount = state.submissions.filter(
                 (submission) => submission.activityId === activity.activityId,
               ).length;
+              const availability = getActivityAvailability({
+                activity,
+                nowIso: state.todayIso,
+              });
+              const isAvailable = availability.isOpen;
               const isSelected = activity.activityId === selectedActivityId;
 
               return (
@@ -112,7 +121,7 @@ export function ActivityOperationsView({
                     <span>{activityTypeLabels[activity.type]}</span>
                     <span>{activity.isAnonymous ? "익명" : "기명"}</span>
                     <span>{activity.allowMultipleSubmissions ? "여러 번" : "1회 제한"}</span>
-                    <span>상태: {activity.status === "open" ? "열림" : "닫힘"}</span>
+                    <span>상태: {getActivityAvailabilityLabel(availability)}</span>
                     <span>마감: {activity.closesAt.slice(0, 10)}</span>
                     <span>제출 {submissionCount}건</span>
                   </button>
@@ -131,7 +140,7 @@ export function ActivityOperationsView({
                       className="icon-button"
                       aria-label={`${activity.code} 종료`}
                       type="button"
-                      disabled={isClassArchived || activity.status === "closed"}
+                      disabled={isClassArchived || !isAvailable}
                       onClick={() => {
                         actions.updateActivityStatus(activity.activityId, "closed");
                         setOperationMessage(`${activity.code} 활동을 종료했습니다.`);

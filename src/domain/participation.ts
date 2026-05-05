@@ -19,6 +19,63 @@ export type SubmissionGate =
         | "classArchived";
     };
 
+export type ActivityAvailability =
+  | { kind: "open"; isOpen: true }
+  | { kind: "notOpenYet"; isOpen: false; nextOpenAt: string }
+  | { kind: "closed"; isOpen: false; closedAt: string }
+  | { kind: "expired"; isOpen: false; expiredAt: string };
+
+export function getActivityAvailability(params: {
+  activity: ParticipationActivity;
+  nowIso: string;
+}): ActivityAvailability {
+  if (params.activity.status === "closed") {
+    return {
+      kind: "closed",
+      isOpen: false,
+      closedAt: params.activity.closesAt,
+    };
+  }
+
+  const now = new Date(params.nowIso).getTime();
+  const opensAt = new Date(params.activity.opensAt).getTime();
+  const closesAt = new Date(params.activity.closesAt).getTime();
+
+  if (now < opensAt) {
+    return {
+      kind: "notOpenYet",
+      isOpen: false,
+      nextOpenAt: params.activity.opensAt,
+    };
+  }
+
+  if (now > closesAt) {
+    return {
+      kind: "expired",
+      isOpen: false,
+      expiredAt: params.activity.closesAt,
+    };
+  }
+
+  return { kind: "open", isOpen: true };
+}
+
+export function getActivityAvailabilityLabel(availability: ActivityAvailability): string {
+  if (availability.kind === "open") {
+    return "열림";
+  }
+
+  if (availability.kind === "notOpenYet") {
+    return "시작 전";
+  }
+
+  if (availability.kind === "expired") {
+    return "마감됨";
+  }
+
+  return "종료됨";
+}
+
 export function normalizeStudentNumber(input: string): string {
   const numeric = input.trim().replace(/\D/g, "");
 
@@ -60,16 +117,17 @@ export function canAcceptSubmission(params: {
     return { ok: false, reason: "classArchived" };
   }
 
-  const now = new Date(params.nowIso).getTime();
-  const opensAt = new Date(params.activity.opensAt).getTime();
-  const closesAt = new Date(params.activity.closesAt).getTime();
+  const availability = getActivityAvailability({
+    activity: params.activity,
+    nowIso: params.nowIso,
+  });
 
-  if (params.activity.status === "closed" || now > closesAt) {
+  if (!availability.isOpen) {
+    if (availability.kind === "notOpenYet") {
+      return { ok: false, reason: "notOpenYet" };
+    }
+
     return { ok: false, reason: "activityClosed" };
-  }
-
-  if (now < opensAt) {
-    return { ok: false, reason: "notOpenYet" };
   }
 
   const participationKey = buildParticipationKey(

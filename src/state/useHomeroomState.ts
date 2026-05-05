@@ -637,7 +637,38 @@ export function useHomeroomState() {
     }
 
     setActiveSubmissions((items) =>
-      items.filter((submission) => submission.submissionId !== submissionId),
+      items.filter((submission) => {
+        if (submission.submissionId !== submissionId) {
+          return true;
+        }
+
+        const matchedActivity = activeActivities.find(
+          (activity) => activity.activityId === submission.activityId,
+        );
+
+        if (
+          matchedActivity?.type === "ruleVote" &&
+          matchedActivity.targetId &&
+          (submission.choice === "agree" || submission.choice === "needsRevision")
+        ) {
+          const choice = submission.choice;
+          setActiveRuleCandidates((candidates) =>
+            candidates.map((candidate) =>
+              candidate.ruleCandidateId === matchedActivity.targetId
+                ? {
+                    ...candidate,
+                    votes: {
+                      ...candidate.votes,
+                      [choice]: Math.max(0, candidate.votes[choice] - 1),
+                    },
+                  }
+                : candidate,
+            ),
+          );
+        }
+
+        return false;
+      }),
     );
   }
 

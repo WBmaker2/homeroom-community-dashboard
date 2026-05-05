@@ -392,6 +392,66 @@ describe("homeroom app workflows", () => {
     expect(screen.getByRole("status").textContent).toContain(`${activityCode} 링크를 복사했습니다.`);
   });
 
+  it("aligns teacher open-activity indicators with starts and closes", async () => {
+    const user = userEvent.setup();
+    const fixedNow = "2026-05-05T10:00:00+09:00";
+    const snapshot = createBackupSnapshot("시간 제약 학급");
+
+    snapshot.activities = [
+      {
+        activityId: "activity-expired",
+        classId: snapshot.homeroomClasses[0]!.classId,
+        type: "agendaSubmission",
+        title: "만료된 활동",
+        code: "EXPIRED-0001",
+        status: "open",
+        opensAt: "2026-05-04T09:00:00+09:00",
+        closesAt: "2026-05-05T09:00:00+09:00",
+        isAnonymous: false,
+        allowMultipleSubmissions: true,
+      },
+      {
+        activityId: "activity-upcoming",
+        classId: snapshot.homeroomClasses[0]!.classId,
+        type: "agendaSubmission",
+        title: "시작 전 활동",
+        code: "UPCOMING-0001",
+        status: "open",
+        opensAt: "2026-05-06T09:00:00+09:00",
+        closesAt: "2026-05-06T18:00:00+09:00",
+        isAnonymous: false,
+        allowMultipleSubmissions: true,
+      },
+    ];
+
+    const nowSpy = vi.spyOn(timePolicy, "getCurrentHomeroomIso").mockReturnValue(fixedNow);
+
+    unlockTeacherSession();
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      serializeSnapshot(
+        createSnapshotPayload({
+          snapshot,
+          savedAt: "2026-05-03T09:00:00.000Z",
+        }),
+      ),
+    );
+
+    renderAt("/teacher");
+    expect(screen.getByText("0개 열림")).toBeInTheDocument();
+    expect(screen.queryByText("만료된 활동")).not.toBeInTheDocument();
+    expect(screen.queryByText("시작 전 활동")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "활동 운영" }));
+    const expiredRow = getActivityRowButton("EXPIRED-0001");
+    const upcomingRow = getActivityRowButton("UPCOMING-0001");
+
+    expect(within(expiredRow.closest("article")!).getByText("상태: 마감됨")).toBeInTheDocument();
+    expect(within(upcomingRow.closest("article")!).getByText("상태: 시작 전")).toBeInTheDocument();
+
+    nowSpy.mockRestore();
+  });
+
   it("disables student submission after closing an activity and re-enables it after reopening", async () => {
     const user = userEvent.setup();
     const activityCode = "CLOSE-REOPEN-0001";
@@ -446,6 +506,81 @@ describe("homeroom app workflows", () => {
     expect(screen.getByRole("status").textContent).toContain("제출되었습니다.");
 
     nowSpy.mockRestore();
+  });
+
+  it("rolls back vote counts when deleting a ruleVote submission", async () => {
+    const user = userEvent.setup();
+    const fixedNow = "2026-05-03T10:00:00+09:00";
+    const activityCode = "VOTE-DELETE-0001";
+    const candidateId = "vote-candidate-rollback";
+    const snapshot = createBackupSnapshot("투표 삭제 학급");
+
+    snapshot.activities = [
+      {
+        activityId: "activity-vote-delete",
+        classId: snapshot.homeroomClasses[0]!.classId,
+        type: "ruleVote",
+        title: "투표 삭제 검증 활동",
+        targetId: candidateId,
+        code: activityCode,
+        status: "open",
+        opensAt: "2026-05-03T09:00:00+09:00",
+        closesAt: "2026-05-03T18:00:00+09:00",
+        isAnonymous: false,
+        allowMultipleSubmissions: false,
+      },
+    ];
+
+    snapshot.ruleCandidates = [
+      {
+        ruleCandidateId: candidateId,
+        classId: snapshot.homeroomClasses[0]!.classId,
+        title: "테스트 규칙 후보",
+        description: "삭제 시 카운트 검증용",
+        status: "VOTING",
+        voteEndsAt: "2026-05-03T18:00:00+09:00",
+        votes: {
+          agree: 1,
+          needsRevision: 0,
+        },
+      },
+    ];
+
+    snapshot.submissions = [
+      {
+        submissionId: "submission-vote-delete",
+        classId: snapshot.homeroomClasses[0]!.classId,
+        activityId: "activity-vote-delete",
+        studentId: "student-imported-01",
+        submittedAt: fixedNow,
+        choice: "agree",
+      },
+    ];
+
+    vi.spyOn(timePolicy, "getCurrentHomeroomIso").mockReturnValue(fixedNow);
+    unlockTeacherSession();
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      serializeSnapshot(
+        createSnapshotPayload({
+          snapshot,
+          savedAt: "2026-05-03T09:00:00.000Z",
+        }),
+      ),
+    );
+
+    renderAt("/teacher");
+
+    await user.click(screen.getByRole("button", { name: "활동 운영" }));
+    await user.click(getActivityRowButton(activityCode));
+    await user.click(screen.getByRole("button", { name: "제출 삭제" }));
+
+    await waitFor(() => {
+      expect(
+        getPersistedSnapshot().ruleCandidates.find((candidate) => candidate.ruleCandidateId === candidateId)
+          ?.votes.agree,
+      ).toBe(0);
+    });
   });
 
   it("allows one-time re-submission after deleting submission record", async () => {

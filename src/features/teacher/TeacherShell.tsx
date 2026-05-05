@@ -144,6 +144,7 @@ export function TeacherShell({
             signals={signals}
             seatingPlan={seatingPlan}
             activities={state.activities}
+            todayIso={state.todayIso}
             setActiveView={setActiveView}
           />
         )}

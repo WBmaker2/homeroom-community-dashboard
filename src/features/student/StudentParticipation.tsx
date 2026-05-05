@@ -1,6 +1,11 @@
 import { CheckCircle2, Send } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { canAcceptSubmission, findStudentByNumber } from "../../domain/participation";
+import {
+  canAcceptSubmission,
+  findStudentByNumber,
+  getActivityAvailability,
+  getActivityAvailabilityLabel,
+} from "../../domain/participation";
 import { getCurrentHomeroomIso } from "../../domain/timePolicy";
 import type {
   AgendaItem,
@@ -37,13 +42,18 @@ export function StudentParticipation({
   );
   const isClassArchived = state.homeroomClass.status === "archived";
   const nowIso = getCurrentHomeroomIso();
-  const isBeforeOpen = activity
-    ? new Date(nowIso).getTime() < new Date(activity.opensAt).getTime()
-    : false;
-  const isExpired = activity ? new Date(nowIso).getTime() > new Date(activity.closesAt).getTime() : false;
-  const isActivityClosed = activity?.status === "closed" || isExpired;
-  const isSubmitDisabled = isClassArchived || isActivityClosed || isBeforeOpen;
-  const isActivityUnavailable = isClassArchived || isActivityClosed || isBeforeOpen;
+  const availability = useMemo(
+    () =>
+      activity
+        ? getActivityAvailability({
+            activity,
+            nowIso,
+          })
+        : { kind: "closed", isOpen: false, closedAt: "" } as const,
+    [activity, nowIso],
+  );
+  const isSubmitDisabled = isClassArchived || !availability.isOpen;
+  const isActivityUnavailable = isClassArchived || !availability.isOpen;
   const targetCandidate = activity?.targetId
     ? state.ruleCandidates.find((candidate) => candidate.ruleCandidateId === activity.targetId)
     : null;
@@ -212,19 +222,15 @@ export function StudentParticipation({
                 <span className="status-chip">
                   {isClassArchived
                     ? "보관 학급"
-                    : isBeforeOpen
-                      ? "시작 전"
-                      : isActivityClosed
-                        ? "마감"
-                        : "열림"}
+                    : getActivityAvailabilityLabel(availability)}
                 </span>
               </div>
 
               {isActivityUnavailable && !isClassArchived && (
                 <p className="archive-notice">
-                  {isBeforeOpen
+                  {availability.kind === "notOpenYet"
                     ? "이 활동은 아직 시작 전입니다."
-                    : isActivityClosed
+                    : isActivityUnavailable
                       ? "이 활동은 종료되어 제출이 차단됩니다."
                       : ""}
                 </p>

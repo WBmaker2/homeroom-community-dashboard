@@ -1,4 +1,5 @@
 import { ArrowRight, CalendarClock, CheckCircle2 } from "lucide-react";
+import { getActivityAvailability } from "../../../domain/participation";
 import type { computeDashboardSignals } from "../../../domain/dashboardSignals";
 import type { recommendSeatingPlan } from "../../../domain/seating";
 import type { ParticipationActivity } from "../../../domain/types";
@@ -9,6 +10,7 @@ type DashboardViewProps = {
   seatingPlan: ReturnType<typeof recommendSeatingPlan>;
   activities: ParticipationActivity[];
   setActiveView: (view: ActiveView) => void;
+  todayIso: string;
 };
 
 export function DashboardView({
@@ -16,8 +18,14 @@ export function DashboardView({
   seatingPlan,
   activities,
   setActiveView,
+  todayIso,
 }: DashboardViewProps) {
-  const openActivities = activities.filter((activity) => activity.status === "open");
+  const openActivities = activities.filter((activity) =>
+    getActivityAvailability({
+      activity,
+      nowIso: todayIso,
+    }).isOpen,
+  );
 
   return (
     <div className="view-stack">
