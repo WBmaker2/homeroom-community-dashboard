@@ -36,6 +36,18 @@ VITE_FIREBASE_PARTICIPATION_COLLECTION=homeroomPublicActivities
 
 `VITE_FIREBASE_PARTICIPATION_COLLECTION`은 생략하면 `homeroomPublicActivities`를 기본값으로 사용한다.
 
+## 운영 Firebase 설정
+
+2026년 5월 5일 기준 운영용 Firebase 설정은 다음과 같다.
+
+- Firebase 프로젝트 ID: `homeroom-dash-wbmaker2`
+- Firestore 데이터베이스: `(default)`
+- Firestore 리전: `asia-northeast3`
+- 보안 규칙 파일: `firestore.rules`
+- GitHub Pages 빌드 환경변수: GitHub Repository Variables에 등록한다.
+
+Firebase Web API Key는 클라이언트 번들에 포함되는 공개 설정값이지만, 저장소에는 직접 커밋하지 않고 GitHub Actions 변수로만 주입한다.
+
 ## 데이터 모델
 
 Firestore 컬렉션:
@@ -115,35 +127,65 @@ homeroomPublicActivities/{activityCode}/submissions/{submissionDocumentId}
 - 백업 데이터
 - 교사용 설정/비밀번호
 
-## 보안 규칙 초안
+## 보안 규칙
 
-초기 MVP는 익명 학생 참여를 허용하되, 문서 구조와 앱 식별자를 제한한다.
+초기 MVP는 익명 학생 참여를 허용하되, 문서 구조와 앱 식별자를 제한한다. 교사 인증이 아직 없으므로 활동 코드를 아는 사용자는 학생 제출을 읽거나 제출할 수 있다. 이 단계의 보호 범위는 `초대 코드 기반 접근 + 앱 식별자 + 스키마 버전 + 필수 필드 검증`이다.
 
 ```text
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isHomeroomApp() {
+      return request.resource.data.app == "homeroom-community-dashboard"
+        && request.resource.data.schemaVersion == 1;
+    }
+
+    function isExistingHomeroomApp() {
+      return resource.data.app == "homeroom-community-dashboard"
+        && resource.data.schemaVersion == 1;
+    }
+
+    function isPublicActivityWrite(code) {
+      return isHomeroomApp()
+        && request.resource.data.code == code
+        && request.resource.data.teacherId is string
+        && request.resource.data.classId is string
+        && request.resource.data.activityId is string
+        && request.resource.data.payload is string;
+    }
+
+    function isSubmissionCreate() {
+      return isHomeroomApp()
+        && request.resource.data.classId is string
+        && request.resource.data.activityId is string
+        && request.resource.data.studentId is string
+        && request.resource.data.participationKey is string
+        && request.resource.data.payload is string;
+    }
+
+    function isExistingSubmission() {
+      return resource.data.app == "homeroom-community-dashboard"
+        && resource.data.schemaVersion == 1;
+    }
+
     match /homeroomPublicActivities/{code} {
-      allow read: if resource.data.app == "homeroom-community-dashboard";
-      allow write: if request.resource.data.app == "homeroom-community-dashboard"
-        && request.resource.data.schemaVersion == 1
-        && request.resource.data.code == code;
+      allow read: if isExistingHomeroomApp();
+      allow create, update: if isPublicActivityWrite(code);
+      allow delete: if false;
 
       match /submissions/{submissionId} {
         allow read: if true;
-        allow create: if request.resource.data.app == "homeroom-community-dashboard"
-          && request.resource.data.schemaVersion == 1
-          && request.resource.data.participationKey is string
-          && request.resource.data.studentId is string;
-        allow delete: if true;
+        allow create: if isSubmissionCreate();
         allow update: if false;
+        allow delete: if isExistingSubmission();
       }
     }
   }
 }
 ```
 
-실제 운영에서는 교사용 게시/삭제를 Firebase Auth 또는 별도 관리 토큰으로 제한하는 규칙으로 강화해야 한다.
+다음 강화 단계에서는 교사용 게시/삭제를 Firebase Auth 또는 별도 관리 토큰으로 제한하고, 제출 목록 조회도 교사 권한으로 분리한다.
 
 ## 실패 처리
 

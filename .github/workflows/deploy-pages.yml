@@ -38,6 +38,10 @@ jobs:
         run: npm test
 
       - name: Build
+        env:
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_PARTICIPATION_COLLECTION: ${{ vars.VITE_FIREBASE_PARTICIPATION_COLLECTION }}
         run: npm run build
 
       - name: Configure Pages
