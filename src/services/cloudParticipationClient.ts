@@ -184,15 +184,7 @@ export async function fetchCloudSubmissions(
   const payload = (await response.json()) as FirestoreListResponse;
 
   return (payload.documents ?? [])
-    .map((document) => {
-      const rawPayload = getStringField(document, "payload");
-
-      if (!rawPayload) {
-        return null;
-      }
-
-      return parseCloudSubmissionPayload(JSON.parse(rawPayload))?.submission ?? null;
-    })
+    .map((document) => parseCloudSubmissionDocument(document, params.activity))
     .filter((submission): submission is ParticipationSubmission => submission !== null);
 }
 
@@ -281,6 +273,55 @@ function getStringField(document: FirestoreDocument, fieldName: string): string 
   const field = document.fields?.[fieldName];
 
   return field && "stringValue" in field ? field.stringValue : null;
+}
+
+function parseCloudSubmissionDocument(
+  document: FirestoreDocument,
+  activity: ParticipationActivity,
+): ParticipationSubmission | null {
+  const rawPayload = getStringField(document, "payload");
+
+  if (!rawPayload) {
+    return null;
+  }
+
+  let parsedValue: unknown;
+  try {
+    parsedValue = JSON.parse(rawPayload);
+  } catch {
+    return null;
+  }
+
+  const payload = parseCloudSubmissionPayload(parsedValue);
+
+  if (!payload) {
+    return null;
+  }
+
+  const submission = payload.submission;
+  const expectedParticipationKey = buildParticipationKey(
+    submission.classId,
+    submission.activityId,
+    submission.studentId,
+  );
+  const documentClassId = getStringField(document, "classId");
+  const documentActivityId = getStringField(document, "activityId");
+  const documentStudentId = getStringField(document, "studentId");
+  const documentParticipationKey = getStringField(document, "participationKey");
+
+  if (
+    submission.classId !== activity.classId ||
+    submission.activityId !== activity.activityId ||
+    payload.participationKey !== expectedParticipationKey ||
+    documentClassId !== submission.classId ||
+    documentActivityId !== submission.activityId ||
+    documentStudentId !== submission.studentId ||
+    documentParticipationKey !== expectedParticipationKey
+  ) {
+    return null;
+  }
+
+  return submission;
 }
 
 function trimEnvValue(value: unknown): string | undefined {

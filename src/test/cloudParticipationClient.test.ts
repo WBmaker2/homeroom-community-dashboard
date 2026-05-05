@@ -14,6 +14,7 @@ import {
   type CloudSubmissionPayload,
 } from "../domain/cloudParticipation";
 import { sampleActivities, sampleClass, sampleSubmissions } from "../data/sampleClass";
+import { buildParticipationKey } from "../domain/participation";
 
 describe("cloud participation client auth boundaries", () => {
   beforeEach(() => {
@@ -113,6 +114,10 @@ describe("cloud participation client auth boundaries", () => {
       documents: [
         {
           fields: {
+            classId: { stringValue: sampleSubmissions[0]!.classId },
+            activityId: { stringValue: sampleSubmissions[0]!.activityId },
+            studentId: { stringValue: sampleSubmissions[0]!.studentId },
+            participationKey: { stringValue: payload.participationKey },
             payload: {
               stringValue: JSON.stringify(submissionPayload),
             },
@@ -135,6 +140,80 @@ describe("cloud participation client auth boundaries", () => {
     expect(requestOptions?.headers).toMatchObject({
       Authorization: "Bearer teacher-id-token",
     });
+  });
+
+  it("ignores imported cloud submissions whose checked fields and payload target differ", async () => {
+    const selectedSubmission = sampleSubmissions[0]!;
+    const selectedParticipationKey = buildParticipationKey(
+      selectedSubmission.classId,
+      selectedSubmission.activityId,
+      selectedSubmission.studentId,
+    );
+    const mismatchedSubmission = {
+      ...selectedSubmission,
+      activityId: "activity-other",
+    };
+    const mismatchedPayload: CloudSubmissionPayload = {
+      ...createCloudSubmissionPayload(mismatchedSubmission),
+      submission: mismatchedSubmission,
+    };
+    const listResponse = {
+      documents: [
+        {
+          fields: {
+            classId: { stringValue: selectedSubmission.classId },
+            activityId: { stringValue: selectedSubmission.activityId },
+            studentId: { stringValue: selectedSubmission.studentId },
+            participationKey: { stringValue: selectedParticipationKey },
+            payload: {
+              stringValue: JSON.stringify(mismatchedPayload),
+            },
+          },
+        },
+      ],
+    };
+
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(JSON.stringify(listResponse), { status: 200 }),
+    );
+
+    const submissions = await fetchCloudSubmissions({
+      activity: sampleActivities[0]!,
+      idToken: "teacher-id-token",
+    });
+
+    expect(submissions).toEqual([]);
+  });
+
+  it("ignores imported cloud submissions with mismatched participation keys", async () => {
+    const submission = sampleSubmissions[0]!;
+    const validPayload = createCloudSubmissionPayload(submission);
+    const listResponse = {
+      documents: [
+        {
+          fields: {
+            classId: { stringValue: submission.classId },
+            activityId: { stringValue: submission.activityId },
+            studentId: { stringValue: submission.studentId },
+            participationKey: { stringValue: "wrong-key" },
+            payload: {
+              stringValue: JSON.stringify(validPayload),
+            },
+          },
+        },
+      ],
+    };
+
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(JSON.stringify(listResponse), { status: 200 }),
+    );
+
+    const submissions = await fetchCloudSubmissions({
+      activity: sampleActivities[0]!,
+      idToken: "teacher-id-token",
+    });
+
+    expect(submissions).toEqual([]);
   });
 
   it("requires teacher auth token for cloud submission list fetch", async () => {
